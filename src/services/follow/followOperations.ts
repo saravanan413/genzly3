@@ -1,4 +1,3 @@
-
 import { 
   doc, 
   writeBatch,
@@ -98,6 +97,31 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
     return true;
   } catch (error) {
     console.error('Error unfollowing user:', error);
+    return false;
+  }
+};
+
+// New function to remove a follower
+export const removeFollower = async (currentUserId: string, followerUserId: string) => {
+  try {
+    console.log('Starting remove follower operation:', { currentUserId, followerUserId });
+    
+    // Use batch write for atomic operations
+    const batch = writeBatch(db);
+
+    // Remove from current user's followers collection
+    const followersRef = doc(db, 'users', currentUserId, 'followers', followerUserId);
+    batch.delete(followersRef);
+    
+    // Remove from follower's following collection
+    const followingRef = doc(db, 'users', followerUserId, 'following', currentUserId);
+    batch.delete(followingRef);
+
+    await batch.commit();
+    console.log('Remove follower operation completed successfully');
+    return true;
+  } catch (error) {
+    console.error('Error removing follower:', error);
     return false;
   }
 };

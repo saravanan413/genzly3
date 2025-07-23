@@ -2,7 +2,9 @@
 import React, { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import { useNavigate } from 'react-router-dom';
-import { getFollowers, getFollowing, FollowData } from '../services/follow';
+import { Button } from '@/components/ui/button';
+import { useToast } from '@/hooks/use-toast';
+import { getFollowers, getFollowing, FollowData, unfollowUser, removeFollower } from '../services/follow';
 import { useAuth } from '../contexts/AuthContext';
 
 interface FollowersFollowingModalProps {
@@ -20,10 +22,13 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
 }) => {
   const { currentUser } = useAuth();
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [users, setUsers] = useState<FollowData[]>([]);
   const [loading, setLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
   const targetUserId = userId || currentUser?.uid;
+  const isOwnProfile = targetUserId === currentUser?.uid;
 
   useEffect(() => {
     if (isOpen && targetUserId) {
@@ -61,6 +66,76 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
     }
   };
 
+  const handleRemoveFollower = async (followerUserId: string) => {
+    if (!currentUser) return;
+    
+    setActionLoading(followerUserId);
+    
+    try {
+      const success = await removeFollower(currentUser.uid, followerUserId);
+      if (success) {
+        toast({
+          title: "Success",
+          description: "Follower removed successfully",
+          duration: 3000
+        });
+        // Refresh the list
+        fetchUsers();
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to remove follower",
+          variant: "destructive",
+          duration: 3000
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An error occurred while removing follower",
+        variant: "destructive",
+        duration: 3000
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleUnfollowUser = async (followedUserId: string) => {
+    if (!currentUser) return;
+    
+    setActionLoading(followedUserId);
+    
+    try {
+      const success = await unfollowUser(currentUser.uid, followedUserId);
+      if (success) {
+        toast({
+          title: "Success",
+          description: "Unfollowed successfully",
+          duration: 3000
+        });
+        // Refresh the list
+        fetchUsers();
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to unfollow user",
+          variant: "destructive",
+          duration: 3000
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An error occurred while unfollowing",
+        variant: "destructive",
+        duration: 3000
+      });
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   // Generate default avatar
   const getFallbackAvatar = (): string => {
     return '/lovable-uploads/07e28f82-bd38-410c-a208-5db174616626.png';
@@ -92,21 +167,28 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
                 const userInfo = type === 'followers' ? followData.followerInfo : followData.followedInfo;
                 const userId = type === 'followers' ? followData.followerId : followData.followedId;
                 const avatarUrl = userInfo.avatar || getFallbackAvatar();
+                const isCurrentUser = userId === currentUser?.uid;
+                const isLoadingAction = actionLoading === userId;
                 
                 return (
                   <div 
                     key={userId} 
-                    className="flex items-center px-4 py-3 gap-3 hover:bg-muted transition cursor-pointer"
-                    onClick={() => handleUserClick(userId)}
+                    className="flex items-center px-4 py-3 gap-3 hover:bg-muted transition"
                   >
-                    <div className="w-11 h-11 rounded-full flex-shrink-0">
+                    <div 
+                      className="w-11 h-11 rounded-full flex-shrink-0 cursor-pointer"
+                      onClick={() => handleUserClick(userId)}
+                    >
                       <img 
                         src={avatarUrl} 
                         alt={userInfo.username} 
                         className="w-full h-full rounded-full object-cover"
                       />
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div 
+                      className="flex-1 min-w-0 cursor-pointer"
+                      onClick={() => handleUserClick(userId)}
+                    >
                       <div className="font-medium text-foreground truncate">
                         {userInfo.username || 'Unknown'}
                       </div>
@@ -114,9 +196,40 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
                         {userInfo.displayName || userInfo.username || 'Unknown User'}
                       </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      {followData.timestamp ? new Date(followData.timestamp.toDate()).toLocaleDateString() : ''}
-                    </div>
+                    
+                    {/* Action buttons - only show if it's the current user's profile and not themselves */}
+                    {isOwnProfile && !isCurrentUser && (
+                      <div className="flex-shrink-0">
+                        {type === 'followers' ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveFollower(userId)}
+                            disabled={isLoadingAction}
+                            className="text-xs px-3 py-1 h-7"
+                          >
+                            {isLoadingAction ? 'Removing...' : 'Remove'}
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleUnfollowUser(userId)}
+                            disabled={isLoadingAction}
+                            className="text-xs px-3 py-1 h-7"
+                          >
+                            {isLoadingAction ? 'Unfollowing...' : 'Unfollow'}
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Show timestamp if no action buttons */}
+                    {(!isOwnProfile || isCurrentUser) && (
+                      <div className="text-xs text-muted-foreground flex-shrink-0">
+                        {followData.timestamp ? new Date(followData.timestamp.toDate()).toLocaleDateString() : ''}
+                      </div>
+                    )}
                   </div>
                 );
               })}
