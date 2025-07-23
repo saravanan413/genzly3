@@ -6,7 +6,7 @@ import {
   signOut,
   User
 } from 'firebase/auth';
-import { doc, setDoc, getDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../config/firebase';
 import { logger } from '../utils/logger';
 
@@ -23,6 +23,7 @@ export interface UserProfile {
   posts: number;
   createdAt: any;
   lastActive: any;
+  isOnline?: boolean;
 }
 
 // Create or update user document in Firestore with enhanced error handling
@@ -173,7 +174,31 @@ export const signInWithGoogle = async () => {
 
 export const logout = async () => {
   try {
+    const currentUser = auth.currentUser;
+    
+    // Update user status to offline before signing out
+    if (currentUser) {
+      logger.debug(`Setting user offline status for: ${currentUser.email}`);
+      try {
+        const userDocRef = doc(db, 'users', currentUser.uid);
+        await updateDoc(userDocRef, {
+          isOnline: false,
+          lastActive: serverTimestamp()
+        });
+      } catch (firestoreError) {
+        logger.error('Error updating user status during logout:', firestoreError);
+        // Continue with logout even if Firestore update fails
+      }
+    }
+    
+    // Clear any local storage data
+    localStorage.removeItem('dataSaverEnabled');
+    localStorage.removeItem('theme');
+    
+    // Sign out from Firebase
     await signOut(auth);
+    logger.debug('User signed out successfully');
+    
   } catch (error) {
     logger.error('Error signing out:', error);
     throw error;

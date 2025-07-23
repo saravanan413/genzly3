@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, User, Lock, Bell, Eye, Heart, Shield, HelpCircle, LogOut, Moon, Globe, Camera, ThumbsUp, Play, Database, Key } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -22,9 +22,11 @@ const Settings = () => {
   });
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [updatingPrivacy, setUpdatingPrivacy] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const { profile } = useUserProfile(currentUser?.uid || '');
   
   const [privateAccount, setPrivateAccount] = useState(false);
@@ -77,6 +79,27 @@ const Settings = () => {
       });
     } finally {
       setUpdatingPrivacy(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await logout();
+      toast({
+        title: "Logged out",
+        description: "You have been successfully logged out"
+      });
+      navigate('/auth');
+    } catch (error: any) {
+      console.error('Logout error:', error);
+      toast({
+        title: "Error",
+        description: error.message || "Failed to log out. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoggingOut(false);
     }
   };
 
@@ -301,9 +324,14 @@ const Settings = () => {
 
             {/* Logout */}
             <div className="bg-card rounded-lg border p-4">
-              <Button variant="destructive" className="w-full flex items-center space-x-2">
+              <Button 
+                variant="destructive" 
+                className="w-full flex items-center space-x-2"
+                onClick={handleLogout}
+                disabled={loggingOut}
+              >
                 <LogOut size={20} />
-                <span>Log Out</span>
+                <span>{loggingOut ? 'Logging out...' : 'Log Out'}</span>
               </Button>
             </div>
           </div>

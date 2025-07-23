@@ -14,6 +14,7 @@ import {
   AuthError
 } from 'firebase/auth';
 import { createOrUpdateUserProfile, getUserProfile, UserProfile } from '../services/firestoreService';
+import { logout as authServiceLogout } from '../services/authService';
 import firebaseApp from '../config/firebase';
 import { logger } from '../utils/logger';
 
@@ -125,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<void> => {
     try {
-      await firebaseSignOut(auth);
+      await authServiceLogout();
     } catch (error) {
       logger.error('Logout failed', error);
       throw error;
