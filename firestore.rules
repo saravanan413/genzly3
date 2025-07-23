@@ -1,0 +1,140 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users can read all profiles, write their own
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      
+      // Followers subcollection - only profile owner can manage
+      match /followers/{followerId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Following subcollection - only profile owner can manage
+      match /following/{followedId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Follow requests subcollection - only profile owner can manage
+      match /followRequests/{requesterId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+      
+      // Blocked users subcollection - users can manage their own blocked list
+      match /blockedUsers/{blockedUserId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow write: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null && request.auth.uid == userId;
+        allow delete: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Chat metadata - only participants can access
+    match /chats/{chatId} {
+      allow read, write: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*'));
+      allow create: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*'));
+    }
+    
+    // Chat messages - only participants can access
+    match /chats/{chatId}/messages/{messageId} {
+      allow read, write: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*'));
+      allow create: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*') &&
+         request.auth.uid == request.resource.data.senderId);
+    }
+    
+    // Chat typing indicators - only participants can access
+    match /chats/{chatId}/typing/{userId} {
+      allow read, write: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*'));
+      allow create: if request.auth != null && 
+        (chatId.matches('.*' + request.auth.uid + '.*') &&
+         request.auth.uid == userId);
+    }
+    
+    // User chat lists - users can only access their own chat list
+    match /chatLists/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      match /{chatPartnerId} {
+        allow read, write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+    
+    // Posts - users can read all, write their own
+    match /posts/{postId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // Stories - users can read active stories, write their own
+    match /stories/{storyId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // Reels - users can read all, write their own
+    match /reels/{reelId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+    
+    // Notifications - users can only access their own notifications
+    match /notifications/{notificationId} {
+      allow read: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      allow delete: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+    }
+
+    // Reports - only authenticated users can create reports, only admins can read
+    match /reports/{reportId} {
+      allow create: if request.auth != null && 
+        request.auth.uid == request.resource.data.reportedById;
+      allow read, update, delete: if false; // Only admins should access reports
+    }
+  }
+}

@@ -1,0 +1,369 @@
+
+import { 
+  doc, 
+  collection, 
+  addDoc, 
+  deleteDoc, 
+  getDocs, 
+  query, 
+  where, 
+  onSnapshot, 
+  serverTimestamp,
+  getDoc,
+  writeBatch,
+  setDoc
+} from 'firebase/firestore';
+import { db } from '../../config/firebase';
+
+export interface FollowRequest {
+  id: string;
+  requesterId: string;
+  requesterInfo: {
+    uid: string;
+    username: string;
+    displayName: string;
+    avatar: string;
+  };
+  timestamp: any;
+}
+
+export interface BlockedUser {
+  id: string;
+  blockedUserId: string;
+  blockedUserInfo: {
+    uid: string;
+    username: string;
+    displayName: string;
+    avatar: string;
+  };
+  timestamp: any;
+}
+
+// Send follow request to private account
+export const sendFollowRequest = async (currentUserId: string, targetUserId: string) => {
+  try {
+    // Get current user profile
+    const currentUserDoc = await getDoc(doc(db, 'users', currentUserId));
+    if (!currentUserDoc.exists()) {
+      throw new Error('Current user not found');
+    }
+    
+    const currentUserData = currentUserDoc.data();
+    
+    // Add request to target user's follow requests
+    const followRequestsRef = collection(db, 'users', targetUserId, 'followRequests');
+    await addDoc(followRequestsRef, {
+      requesterId: currentUserId,
+      requesterInfo: {
+        uid: currentUserId,
+        username: currentUserData.username || 'Unknown',
+        displayName: currentUserData.displayName || 'Unknown User',
+        avatar: currentUserData.avatar || null
+      },
+      timestamp: serverTimestamp()
+    });
+    
+    return true;
+  } catch (error) {
+    console.error('Error sending follow request:', error);
+    return false;
+  }
+};
+
+// Cancel follow request
+export const cancelFollowRequest = async (currentUserId: string, targetUserId: string) => {
+  try {
+    const followRequestsRef = collection(db, 'users', targetUserId, 'followRequests');
+    const q = query(followRequestsRef, where('requesterId', '==', currentUserId));
+    const snapshot = await getDocs(q);
+    
+    const batch = writeBatch(db);
+    snapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    return true;
+  } catch (error) {
+    console.error('Error canceling follow request:', error);
+    return false;
+  }
+};
+
+// Get follow requests for a user
+export const getFollowRequests = async (userId: string): Promise<FollowRequest[]> => {
+  try {
+    const followRequestsRef = collection(db, 'users', userId, 'followRequests');
+    const snapshot = await getDocs(followRequestsRef);
+    
+    const requests: FollowRequest[] = [];
+    snapshot.forEach((doc) => {
+      requests.push({
+        id: doc.id,
+        ...doc.data()
+      } as FollowRequest);
+    });
+    
+    return requests;
+  } catch (error) {
+    console.error('Error getting follow requests:', error);
+    return [];
+  }
+};
+
+// Accept follow request
+export const acceptFollowRequest = async (currentUserId: string, requesterId: string) => {
+  try {
+    const batch = writeBatch(db);
+    
+    // Get requester data
+    const requesterDoc = await getDoc(doc(db, 'users', requesterId));
+    const currentUserDoc = await getDoc(doc(db, 'users', currentUserId));
+    
+    if (!requesterDoc.exists() || !currentUserDoc.exists()) {
+      throw new Error('User documents not found');
+    }
+    
+    const requesterData = requesterDoc.data();
+    const currentUserData = currentUserDoc.data();
+    
+    // Add to followers
+    const followersRef = doc(db, 'users', currentUserId, 'followers', requesterId);
+    batch.set(followersRef, {
+      uid: requesterId,
+      username: requesterData.username || 'Unknown',
+      displayName: requesterData.displayName || 'Unknown User',
+      avatar: requesterData.avatar || null,
+      timestamp: serverTimestamp()
+    });
+    
+    // Add to following
+    const followingRef = doc(db, 'users', requesterId, 'following', currentUserId);
+    batch.set(followingRef, {
+      uid: currentUserId,
+      username: currentUserData.username || 'Unknown',
+      displayName: currentUserData.displayName || 'Unknown User',
+      avatar: currentUserData.avatar || null,
+      timestamp: serverTimestamp()
+    });
+    
+    // Remove from follow requests
+    const followRequestsRef = collection(db, 'users', currentUserId, 'followRequests');
+    const q = query(followRequestsRef, where('requesterId', '==', requesterId));
+    const snapshot = await getDocs(q);
+    
+    snapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    return true;
+  } catch (error) {
+    console.error('Error accepting follow request:', error);
+    return false;
+  }
+};
+
+// Reject follow request
+export const rejectFollowRequest = async (currentUserId: string, requesterId: string) => {
+  try {
+    const followRequestsRef = collection(db, 'users', currentUserId, 'followRequests');
+    const q = query(followRequestsRef, where('requesterId', '==', requesterId));
+    const snapshot = await getDocs(q);
+    
+    const batch = writeBatch(db);
+    snapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    await batch.commit();
+    return true;
+  } catch (error) {
+    console.error('Error rejecting follow request:', error);
+    return false;
+  }
+};
+
+// Block user with improved error handling
+export const blockUser = async (currentUserId: string, targetUserId: string) => {
+  try {
+    console.log('Starting block user operation:', { currentUserId, targetUserId });
+    
+    // Validate inputs
+    if (!currentUserId || !targetUserId) {
+      console.error('Invalid user IDs provided');
+      return { success: false, message: 'Invalid user information provided' };
+    }
+
+    if (currentUserId === targetUserId) {
+      console.error('Cannot block yourself');
+      return { success: false, message: 'You cannot block yourself' };
+    }
+
+    // Check if already blocked
+    const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
+    if (blockedUserDoc.exists()) {
+      console.log('User is already blocked');
+      return { success: false, message: 'User is already blocked' };
+    }
+
+    // Get target user data
+    const targetUserDoc = await getDoc(doc(db, 'users', targetUserId));
+    if (!targetUserDoc.exists()) {
+      console.error('Target user not found');
+      return { success: false, message: 'User not found' };
+    }
+    
+    const targetUserData = targetUserDoc.data();
+    
+    // Use setDoc instead of batch for the main blocking operation
+    const blockedUsersRef = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
+    await setDoc(blockedUsersRef, {
+      uid: targetUserId,
+      blockedUserId: targetUserId,
+      blockedUserInfo: {
+        uid: targetUserId,
+        username: targetUserData.username || 'Unknown',
+        displayName: targetUserData.displayName || 'Unknown User',
+        avatar: targetUserData.avatar || null
+      },
+      blockedAt: serverTimestamp(),
+      timestamp: serverTimestamp()
+    });
+
+    // Clean up relationships in a separate batch operation
+    try {
+      const batch = writeBatch(db);
+      
+      // Remove from followers if exists
+      const followersRef = doc(db, 'users', currentUserId, 'followers', targetUserId);
+      batch.delete(followersRef);
+      
+      // Remove from following if exists
+      const followingRef = doc(db, 'users', currentUserId, 'following', targetUserId);
+      batch.delete(followingRef);
+      
+      // Also remove current user from target's followers/following
+      const targetFollowersRef = doc(db, 'users', targetUserId, 'followers', currentUserId);
+      batch.delete(targetFollowersRef);
+      
+      const targetFollowingRef = doc(db, 'users', targetUserId, 'following', currentUserId);
+      batch.delete(targetFollowingRef);
+      
+      // Remove any follow requests from both sides
+      const followRequestsRef = collection(db, 'users', currentUserId, 'followRequests');
+      const followRequestsQuery = query(followRequestsRef, where('requesterId', '==', targetUserId));
+      const followRequestsSnapshot = await getDocs(followRequestsQuery);
+      
+      followRequestsSnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      
+      const targetFollowRequestsRef = collection(db, 'users', targetUserId, 'followRequests');
+      const targetFollowRequestsQuery = query(targetFollowRequestsRef, where('requesterId', '==', currentUserId));
+      const targetFollowRequestsSnapshot = await getDocs(targetFollowRequestsQuery);
+      
+      targetFollowRequestsSnapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+
+      await batch.commit();
+    } catch (cleanupError) {
+      console.warn('Some cleanup operations failed, but user was blocked:', cleanupError);
+      // Don't fail the entire operation if cleanup fails
+    }
+    
+    console.log('Block user operation completed successfully');
+    return { success: true, message: 'User blocked successfully' };
+  } catch (error: any) {
+    console.error('Error blocking user:', error);
+    
+    // Handle specific Firebase errors
+    if (error.code === 'permission-denied') {
+      return { success: false, message: 'Permission denied. Please check your internet connection and try again.' };
+    } else if (error.code === 'unavailable') {
+      return { success: false, message: 'Service temporarily unavailable. Please try again later.' };
+    } else if (error.code === 'not-found') {
+      return { success: false, message: 'User not found or no longer exists.' };
+    } else {
+      return { success: false, message: 'Failed to block user. Please check your internet connection and try again.' };
+    }
+  }
+};
+
+// Unblock user with improved error handling
+export const unblockUser = async (currentUserId: string, targetUserId: string) => {
+  try {
+    console.log('Starting unblock user operation:', { currentUserId, targetUserId });
+    
+    // Validate inputs
+    if (!currentUserId || !targetUserId) {
+      console.error('Invalid user IDs provided');
+      return { success: false, message: 'Invalid user information provided' };
+    }
+    
+    // Check if user is actually blocked
+    const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
+    if (!blockedUserDoc.exists()) {
+      console.log('User is not blocked');
+      return { success: false, message: 'User is not blocked' };
+    }
+
+    const blockedUsersRef = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
+    await deleteDoc(blockedUsersRef);
+    
+    console.log('Unblock user operation completed successfully');
+    return { success: true, message: 'User unblocked successfully' };
+  } catch (error: any) {
+    console.error('Error unblocking user:', error);
+    
+    // Handle specific Firebase errors
+    if (error.code === 'permission-denied') {
+      return { success: false, message: 'Permission denied. Please check your internet connection and try again.' };
+    } else if (error.code === 'unavailable') {
+      return { success: false, message: 'Service temporarily unavailable. Please try again later.' };
+    } else if (error.code === 'not-found') {
+      return { success: false, message: 'User not found or no longer exists.' };
+    } else {
+      return { success: false, message: 'Failed to unblock user. Please check your internet connection and try again.' };
+    }
+  }
+};
+
+// Check if user is blocked
+export const isUserBlocked = async (currentUserId: string, targetUserId: string): Promise<boolean> => {
+  try {
+    const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
+    return blockedUserDoc.exists();
+  } catch (error) {
+    console.error('Error checking if user is blocked:', error);
+    return false;
+  }
+};
+
+// Subscribe to follow request status
+export const subscribeToFollowRequestStatus = (
+  currentUserId: string,
+  targetUserId: string,
+  callback: (hasRequest: boolean) => void
+) => {
+  const followRequestsRef = collection(db, 'users', targetUserId, 'followRequests');
+  const q = query(followRequestsRef, where('requesterId', '==', currentUserId));
+  
+  return onSnapshot(q, (snapshot) => {
+    callback(!snapshot.empty);
+  });
+};
+
+// Subscribe to blocked status
+export const subscribeToBlockedStatus = (
+  currentUserId: string,
+  targetUserId: string,
+  callback: (isBlocked: boolean) => void
+) => {
+  const blockedUserDoc = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
+  
+  return onSnapshot(blockedUserDoc, (doc) => {
+    callback(doc.exists());
+  });
+};
