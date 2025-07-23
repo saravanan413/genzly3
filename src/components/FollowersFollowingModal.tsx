@@ -77,8 +77,19 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
   const handleRemoveFollower = async (followerUserId: string) => {
     if (!currentUser || !followerUserId) {
       console.error('Missing required data for remove follower');
+      toast({
+        title: "Error",
+        description: "Missing user information",
+        variant: "destructive",
+        duration: 3000
+      });
       return;
     }
+    
+    console.log('Handle remove follower called with:', {
+      currentUserId: currentUser.uid,
+      followerUserId: followerUserId
+    });
     
     setActionLoading(followerUserId);
     
@@ -107,7 +118,7 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
       console.error('Error in remove follower operation:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while removing follower",
+        description: `Failed to remove follower: ${error.message || 'Unknown error'}`,
         variant: "destructive",
         duration: 3000
       });
@@ -119,8 +130,19 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
   const handleUnfollowUser = async (followedUserId: string) => {
     if (!currentUser || !followedUserId) {
       console.error('Missing required data for unfollow');
+      toast({
+        title: "Error",
+        description: "Missing user information",
+        variant: "destructive",
+        duration: 3000
+      });
       return;
     }
+    
+    console.log('Handle unfollow called with:', {
+      currentUserId: currentUser.uid,
+      followedUserId: followedUserId
+    });
     
     setActionLoading(followedUserId);
     
@@ -149,7 +171,7 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
       console.error('Error in unfollow operation:', error);
       toast({
         title: "Error",
-        description: "An unexpected error occurred while unfollowing",
+        description: `Failed to unfollow: ${error.message || 'Unknown error'}`,
         variant: "destructive",
         duration: 3000
       });

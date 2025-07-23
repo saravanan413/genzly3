@@ -80,24 +80,33 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
 
   try {
     console.log('Starting unfollow operation:', { currentUserId, targetUserId });
+    console.log('Current user trying to unfollow:', currentUserId);
+    console.log('Target user being unfollowed:', targetUserId);
     
     // Check if this is a follow request that needs to be cancelled
     const targetUserDoc = await getDoc(doc(db, 'users', targetUserId));
     if (targetUserDoc.exists() && targetUserDoc.data().isPrivate) {
-      // Try to cancel follow request first
+      console.log('Target user is private, cancelling follow request');
       await cancelFollowRequest(currentUserId, targetUserId);
     }
     
-    // Check if the documents exist before trying to delete them
-    const [followersRef, followingRef] = [
-      doc(db, 'users', targetUserId, 'followers', currentUserId),
-      doc(db, 'users', currentUserId, 'following', targetUserId)
-    ];
+    // Define the document references we need to check and potentially delete
+    const followersRef = doc(db, 'users', targetUserId, 'followers', currentUserId);
+    const followingRef = doc(db, 'users', currentUserId, 'following', targetUserId);
+    
+    console.log('Checking document existence...');
+    console.log('Followers ref path:', followersRef.path);
+    console.log('Following ref path:', followingRef.path);
 
+    // Check if the documents exist before trying to delete them
     const [followersDoc, followingDoc] = await Promise.all([
       getDoc(followersRef),
       getDoc(followingRef)
     ]);
+
+    console.log('Document existence check results:');
+    console.log('Followers doc exists:', followersDoc.exists());
+    console.log('Following doc exists:', followingDoc.exists());
 
     // Use batch write for atomic operations
     const batch = writeBatch(db);
@@ -105,19 +114,20 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
 
     // Delete from followers if it exists
     if (followersDoc.exists()) {
+      console.log('Adding followers deletion to batch');
       batch.delete(followersRef);
       hasOperations = true;
-      console.log('Will delete from followers collection');
     }
     
     // Delete from following if it exists
     if (followingDoc.exists()) {
+      console.log('Adding following deletion to batch');
       batch.delete(followingRef);
       hasOperations = true;
-      console.log('Will delete from following collection');
     }
 
     if (hasOperations) {
+      console.log('Committing batch operations...');
       await batch.commit();
       console.log('Unfollow operation completed successfully');
       return true;
@@ -127,11 +137,15 @@ export const unfollowUser = async (currentUserId: string, targetUserId: string) 
     }
   } catch (error) {
     console.error('Error unfollowing user:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
     return false;
   }
 };
 
-// Improved function to remove a follower
 export const removeFollower = async (currentUserId: string, followerUserId: string) => {
   if (currentUserId === followerUserId) {
     console.error('Cannot remove yourself as follower');
@@ -140,17 +154,26 @@ export const removeFollower = async (currentUserId: string, followerUserId: stri
 
   try {
     console.log('Starting remove follower operation:', { currentUserId, followerUserId });
+    console.log('Current user (who is removing):', currentUserId);
+    console.log('Follower user (being removed):', followerUserId);
     
-    // Check if the documents exist before trying to delete them
-    const [followersRef, followingRef] = [
-      doc(db, 'users', currentUserId, 'followers', followerUserId),
-      doc(db, 'users', followerUserId, 'following', currentUserId)
-    ];
+    // Define the document references we need to check and potentially delete
+    const followersRef = doc(db, 'users', currentUserId, 'followers', followerUserId);
+    const followingRef = doc(db, 'users', followerUserId, 'following', currentUserId);
+    
+    console.log('Document references:');
+    console.log('Followers ref path:', followersRef.path);
+    console.log('Following ref path:', followingRef.path);
 
+    // Check if the documents exist before trying to delete them
     const [followersDoc, followingDoc] = await Promise.all([
       getDoc(followersRef),
       getDoc(followingRef)
     ]);
+
+    console.log('Document existence check results:');
+    console.log('Followers doc exists:', followersDoc.exists());
+    console.log('Following doc exists:', followingDoc.exists());
 
     // Use batch write for atomic operations
     const batch = writeBatch(db);
@@ -158,19 +181,20 @@ export const removeFollower = async (currentUserId: string, followerUserId: stri
 
     // Remove from current user's followers collection if it exists
     if (followersDoc.exists()) {
+      console.log('Adding followers deletion to batch');
       batch.delete(followersRef);
       hasOperations = true;
-      console.log('Will delete from current user followers collection');
     }
     
     // Remove from follower's following collection if it exists
     if (followingDoc.exists()) {
+      console.log('Adding following deletion to batch');
       batch.delete(followingRef);
       hasOperations = true;
-      console.log('Will delete from follower following collection');
     }
 
     if (hasOperations) {
+      console.log('Committing batch operations...');
       await batch.commit();
       console.log('Remove follower operation completed successfully');
       return true;
@@ -180,6 +204,11 @@ export const removeFollower = async (currentUserId: string, followerUserId: stri
     }
   } catch (error) {
     console.error('Error removing follower:', error);
+    console.error('Error details:', {
+      code: error.code,
+      message: error.message,
+      stack: error.stack
+    });
     return false;
   }
 };
