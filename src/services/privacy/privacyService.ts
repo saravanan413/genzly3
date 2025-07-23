@@ -184,22 +184,21 @@ export const rejectFollowRequest = async (currentUserId: string, requesterId: st
   }
 };
 
-// Block user with improved error handling
+// Block user with comprehensive cleanup
 export const blockUser = async (currentUserId: string, targetUserId: string) => {
+  if (!currentUserId || !targetUserId) {
+    console.error('Invalid user IDs provided');
+    return { success: false, message: 'Invalid user information provided' };
+  }
+
+  if (currentUserId === targetUserId) {
+    console.error('Cannot block yourself');
+    return { success: false, message: 'You cannot block yourself' };
+  }
+
   try {
     console.log('Starting block user operation:', { currentUserId, targetUserId });
     
-    // Validate inputs
-    if (!currentUserId || !targetUserId) {
-      console.error('Invalid user IDs provided');
-      return { success: false, message: 'Invalid user information provided' };
-    }
-
-    if (currentUserId === targetUserId) {
-      console.error('Cannot block yourself');
-      return { success: false, message: 'You cannot block yourself' };
-    }
-
     // Check if already blocked
     const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
     if (blockedUserDoc.exists()) {
@@ -216,9 +215,12 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
     
     const targetUserData = targetUserDoc.data();
     
-    // Use setDoc instead of batch for the main blocking operation
+    // Use batch for all operations
+    const batch = writeBatch(db);
+    
+    // Add to blocked users collection
     const blockedUsersRef = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
-    await setDoc(blockedUsersRef, {
+    batch.set(blockedUsersRef, {
       uid: targetUserId,
       blockedUserId: targetUserId,
       blockedUserInfo: {
@@ -231,47 +233,54 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
       timestamp: serverTimestamp()
     });
 
-    // Clean up relationships in a separate batch operation
-    try {
-      const batch = writeBatch(db);
-      
-      // Remove from followers if exists
-      const followersRef = doc(db, 'users', currentUserId, 'followers', targetUserId);
-      batch.delete(followersRef);
-      
-      // Remove from following if exists
-      const followingRef = doc(db, 'users', currentUserId, 'following', targetUserId);
-      batch.delete(followingRef);
-      
-      // Also remove current user from target's followers/following
-      const targetFollowersRef = doc(db, 'users', targetUserId, 'followers', currentUserId);
-      batch.delete(targetFollowersRef);
-      
-      const targetFollowingRef = doc(db, 'users', targetUserId, 'following', currentUserId);
-      batch.delete(targetFollowingRef);
-      
-      // Remove any follow requests from both sides
-      const followRequestsRef = collection(db, 'users', currentUserId, 'followRequests');
-      const followRequestsQuery = query(followRequestsRef, where('requesterId', '==', targetUserId));
-      const followRequestsSnapshot = await getDocs(followRequestsQuery);
-      
-      followRequestsSnapshot.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
-      
-      const targetFollowRequestsRef = collection(db, 'users', targetUserId, 'followRequests');
-      const targetFollowRequestsQuery = query(targetFollowRequestsRef, where('requesterId', '==', currentUserId));
-      const targetFollowRequestsSnapshot = await getDocs(targetFollowRequestsQuery);
-      
-      targetFollowRequestsSnapshot.forEach((doc) => {
-        batch.delete(doc.ref);
-      });
+    // Check and clean up existing relationships
+    const [
+      currentUserFollowersDoc,
+      currentUserFollowingDoc,
+      targetUserFollowersDoc,
+      targetUserFollowingDoc
+    ] = await Promise.all([
+      getDoc(doc(db, 'users', currentUserId, 'followers', targetUserId)),
+      getDoc(doc(db, 'users', currentUserId, 'following', targetUserId)),
+      getDoc(doc(db, 'users', targetUserId, 'followers', currentUserId)),
+      getDoc(doc(db, 'users', targetUserId, 'following', currentUserId))
+    ]);
 
-      await batch.commit();
-    } catch (cleanupError) {
-      console.warn('Some cleanup operations failed, but user was blocked:', cleanupError);
-      // Don't fail the entire operation if cleanup fails
+    // Remove from current user's followers if exists
+    if (currentUserFollowersDoc.exists()) {
+      batch.delete(doc(db, 'users', currentUserId, 'followers', targetUserId));
     }
+    
+    // Remove from current user's following if exists
+    if (currentUserFollowingDoc.exists()) {
+      batch.delete(doc(db, 'users', currentUserId, 'following', targetUserId));
+    }
+    
+    // Remove from target user's followers if exists
+    if (targetUserFollowersDoc.exists()) {
+      batch.delete(doc(db, 'users', targetUserId, 'followers', currentUserId));
+    }
+    
+    // Remove from target user's following if exists
+    if (targetUserFollowingDoc.exists()) {
+      batch.delete(doc(db, 'users', targetUserId, 'following', currentUserId));
+    }
+    
+    // Remove any follow requests from both sides
+    const [followRequestsSnapshot, targetFollowRequestsSnapshot] = await Promise.all([
+      getDocs(query(collection(db, 'users', currentUserId, 'followRequests'), where('requesterId', '==', targetUserId))),
+      getDocs(query(collection(db, 'users', targetUserId, 'followRequests'), where('requesterId', '==', currentUserId)))
+    ]);
+    
+    followRequestsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+    
+    targetFollowRequestsSnapshot.forEach((doc) => {
+      batch.delete(doc.ref);
+    });
+
+    await batch.commit();
     
     console.log('Block user operation completed successfully');
     return { success: true, message: 'User blocked successfully' };
@@ -293,14 +302,13 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
 
 // Unblock user with improved error handling
 export const unblockUser = async (currentUserId: string, targetUserId: string) => {
+  if (!currentUserId || !targetUserId) {
+    console.error('Invalid user IDs provided');
+    return { success: false, message: 'Invalid user information provided' };
+  }
+  
   try {
     console.log('Starting unblock user operation:', { currentUserId, targetUserId });
-    
-    // Validate inputs
-    if (!currentUserId || !targetUserId) {
-      console.error('Invalid user IDs provided');
-      return { success: false, message: 'Invalid user information provided' };
-    }
     
     // Check if user is actually blocked
     const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));

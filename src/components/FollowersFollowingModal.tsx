@@ -51,7 +51,15 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
       }
       
       setUsers(followData);
+      console.log(`Loaded ${followData.length} ${type} for user:`, targetUserId);
     } catch (error) {
+      console.error(`Error fetching ${type}:`, error);
+      toast({
+        title: "Error",
+        description: `Failed to load ${type}. Please try again.`,
+        variant: "destructive",
+        duration: 3000
+      });
       setUsers([]);
     }
     setLoading(false);
@@ -67,12 +75,17 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
   };
 
   const handleRemoveFollower = async (followerUserId: string) => {
-    if (!currentUser) return;
+    if (!currentUser || !followerUserId) {
+      console.error('Missing required data for remove follower');
+      return;
+    }
     
     setActionLoading(followerUserId);
     
     try {
+      console.log('Attempting to remove follower:', followerUserId);
       const success = await removeFollower(currentUser.uid, followerUserId);
+      
       if (success) {
         toast({
           title: "Success",
@@ -80,19 +93,21 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
           duration: 3000
         });
         // Refresh the list
-        fetchUsers();
+        await fetchUsers();
       } else {
+        console.error('Remove follower operation returned false');
         toast({
           title: "Error",
-          description: "Failed to remove follower",
+          description: "Failed to remove follower. Please try again.",
           variant: "destructive",
           duration: 3000
         });
       }
     } catch (error) {
+      console.error('Error in remove follower operation:', error);
       toast({
         title: "Error",
-        description: "An error occurred while removing follower",
+        description: "An unexpected error occurred while removing follower",
         variant: "destructive",
         duration: 3000
       });
@@ -102,12 +117,17 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
   };
 
   const handleUnfollowUser = async (followedUserId: string) => {
-    if (!currentUser) return;
+    if (!currentUser || !followedUserId) {
+      console.error('Missing required data for unfollow');
+      return;
+    }
     
     setActionLoading(followedUserId);
     
     try {
+      console.log('Attempting to unfollow user:', followedUserId);
       const success = await unfollowUser(currentUser.uid, followedUserId);
+      
       if (success) {
         toast({
           title: "Success",
@@ -115,19 +135,21 @@ const FollowersFollowingModal: React.FC<FollowersFollowingModalProps> = ({
           duration: 3000
         });
         // Refresh the list
-        fetchUsers();
+        await fetchUsers();
       } else {
+        console.error('Unfollow operation returned false');
         toast({
           title: "Error",
-          description: "Failed to unfollow user",
+          description: "Failed to unfollow user. Please try again.",
           variant: "destructive",
           duration: 3000
         });
       }
     } catch (error) {
+      console.error('Error in unfollow operation:', error);
       toast({
         title: "Error",
-        description: "An error occurred while unfollowing",
+        description: "An unexpected error occurred while unfollowing",
         variant: "destructive",
         duration: 3000
       });

@@ -21,6 +21,7 @@ export const useUserProfileData = (userId: string | undefined) => {
   const [followCounts, setFollowCounts] = useState({ followers: 0, following: 0 });
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const isOwnProfile = userId === currentUser?.uid;
 
@@ -108,6 +109,7 @@ export const useUserProfileData = (userId: string | undefined) => {
 
     console.log('Follow button clicked. Current status:', { isFollowing, hasFollowRequest });
     setLoading(true);
+    setError(null);
     
     try {
       let success = false;
@@ -116,12 +118,16 @@ export const useUserProfileData = (userId: string | undefined) => {
         success = await unfollowUser(currentUser.uid, userId);
         if (success) {
           console.log('Successfully unfollowed user or cancelled request');
+        } else {
+          setError('Failed to unfollow user. Please try again.');
         }
       } else {
         console.log('Attempting to follow user...');
         success = await followUser(currentUser.uid, userId);
         if (success) {
           console.log('Successfully followed user or sent request');
+        } else {
+          setError('Failed to follow user. Please try again.');
         }
       }
 
@@ -130,6 +136,7 @@ export const useUserProfileData = (userId: string | undefined) => {
       }
     } catch (error) {
       console.error('Error updating follow status:', error);
+      setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -142,6 +149,7 @@ export const useUserProfileData = (userId: string | undefined) => {
     followCounts,
     loading: loading || initialLoading,
     isOwnProfile,
+    error,
     handleFollowClick
   };
 };
