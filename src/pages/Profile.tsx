@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import PostModal from '../components/PostModal';
@@ -8,6 +9,7 @@ import ProfileHeader from '../components/profile/ProfileHeader';
 import ProfileTabs from '../components/profile/ProfileTabs';
 import PostsGrid from '../components/profile/PostsGrid';
 import SavedPostsEmpty from '../components/profile/SavedPostsEmpty';
+import HighlightsBar from '../components/profile/HighlightsBar';
 import { useAuth } from '../contexts/AuthContext';
 import { useUserProfile, useUserPosts } from '../hooks/useFirebaseData';
 import { subscribeToFollowersCount, subscribeToFollowingCount } from '../services/follow';
@@ -87,6 +89,12 @@ const Profile = () => {
               onFollowersClick={() => setFollowersModal("followers")}
               onFollowingClick={() => setFollowersModal("following")}
               profile={profileWithCounts}
+            />
+            
+            {/* Add Highlights Bar */}
+            <HighlightsBar
+              userId={currentUser?.uid || ''}
+              isOwnProfile={true}
             />
             
             <ProfileTabs

@@ -5,6 +5,7 @@ import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
 import UserProfileContent from '../components/profile/UserProfileContent';
 import UserProfileModals from '../components/profile/UserProfileModals';
+import HighlightsBar from '../components/profile/HighlightsBar';
 import { useUserProfile, useUserPosts } from '../hooks/useFirebaseData';
 import { useUserProfileData } from '../hooks/useUserProfileData';
 import { useUserProfileState } from '../hooks/useUserProfileState';
@@ -119,6 +120,12 @@ const UserProfile = () => {
           onConnectionsClick={handleConnectionsClick}
           onImageClick={handleImageClick}
           onCommentClick={handleCommentClick}
+        />
+        
+        {/* Add Highlights Bar */}
+        <HighlightsBar
+          userId={userId}
+          isOwnProfile={isOwnProfile}
         />
       </div>
 

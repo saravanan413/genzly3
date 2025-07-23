@@ -1,71 +1,75 @@
 
 import { useState, useEffect } from 'react';
-import { StoryWithTimestamp } from '../utils/storyUtils';
-
-interface StoryHighlight {
-  id: string;
-  name: string;
-  cover: string;
-  stories: StoryWithTimestamp[];
-  createdAt: number;
-}
+import { getUserHighlights, createHighlight, deleteHighlight, Highlight } from '../services/highlightsService';
+import { useAuth } from '../contexts/AuthContext';
 
 export const useStoryHighlights = () => {
-  const [highlights, setHighlights] = useState<StoryHighlight[]>([]);
+  const { currentUser } = useAuth();
+  const [highlights, setHighlights] = useState<Highlight[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Load highlights from localStorage
+  // Load highlights from Firebase
   useEffect(() => {
+    const loadHighlights = async () => {
+      if (!currentUser?.uid) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const userHighlights = await getUserHighlights(currentUser.uid);
+        setHighlights(userHighlights);
+      } catch (error) {
+        console.error('Error loading story highlights:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadHighlights();
+  }, [currentUser]);
+
+  const createHighlightGroup = async (name: string, storyIds: string[], coverImage: string) => {
+    if (!currentUser?.uid) return null;
+
     try {
-      const saved = localStorage.getItem('genzly_story_highlights');
-      if (saved) {
-        setHighlights(JSON.parse(saved));
+      const highlightId = await createHighlight(currentUser.uid, name, storyIds, coverImage);
+      if (highlightId) {
+        const newHighlight: Highlight = {
+          id: highlightId,
+          userId: currentUser.uid,
+          name,
+          stories: storyIds,
+          coverImage,
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        };
+        setHighlights(prev => [newHighlight, ...prev]);
+        return newHighlight;
       }
     } catch (error) {
-      console.error('Error loading story highlights:', error);
+      console.error('Error creating highlight:', error);
     }
-  }, []);
+    return null;
+  };
 
-  const saveHighlights = (newHighlights: StoryHighlight[]) => {
+  const deleteHighlightGroup = async (highlightId: string) => {
     try {
-      localStorage.setItem('genzly_story_highlights', JSON.stringify(newHighlights));
-      setHighlights(newHighlights);
+      const success = await deleteHighlight(highlightId);
+      if (success) {
+        setHighlights(prev => prev.filter(h => h.id !== highlightId));
+      }
+      return success;
     } catch (error) {
-      console.error('Error saving story highlights:', error);
+      console.error('Error deleting highlight:', error);
+      return false;
     }
-  };
-
-  const createHighlight = (name: string, stories: StoryWithTimestamp[]) => {
-    const newHighlight: StoryHighlight = {
-      id: Date.now().toString(),
-      name,
-      cover: stories[0]?.image || '',
-      stories,
-      createdAt: Date.now()
-    };
-    
-    const updatedHighlights = [...highlights, newHighlight];
-    saveHighlights(updatedHighlights);
-    return newHighlight;
-  };
-
-  const addStoryToHighlight = (highlightId: string, story: StoryWithTimestamp) => {
-    const updatedHighlights = highlights.map(highlight => 
-      highlight.id === highlightId 
-        ? { ...highlight, stories: [...highlight.stories, story] }
-        : highlight
-    );
-    saveHighlights(updatedHighlights);
-  };
-
-  const deleteHighlight = (highlightId: string) => {
-    const updatedHighlights = highlights.filter(h => h.id !== highlightId);
-    saveHighlights(updatedHighlights);
   };
 
   return {
     highlights,
-    createHighlight,
-    addStoryToHighlight,
-    deleteHighlight
+    loading,
+    createHighlight: createHighlightGroup,
+    deleteHighlight: deleteHighlightGroup
   };
 };
