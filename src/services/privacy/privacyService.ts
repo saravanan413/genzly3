@@ -1,4 +1,3 @@
-
 import { 
   doc, 
   collection, 
@@ -13,7 +12,7 @@ import {
   writeBatch,
   setDoc
 } from 'firebase/firestore';
-import { db } from '../../config/firebase';
+import { db, auth } from '../../config/firebase';
 
 export interface FollowRequest {
   id: string;
@@ -184,8 +183,23 @@ export const rejectFollowRequest = async (currentUserId: string, requesterId: st
   }
 };
 
-// Block user with comprehensive cleanup
+// Block user with comprehensive cleanup and proper auth checks
 export const blockUser = async (currentUserId: string, targetUserId: string) => {
+  // Check if user is authenticated
+  if (!auth.currentUser) {
+    console.error('No authenticated user found');
+    return { success: false, message: 'You must be signed in to block users' };
+  }
+
+  // Ensure currentUserId matches authenticated user
+  if (currentUserId !== auth.currentUser.uid) {
+    console.error('Authentication mismatch:', {
+      providedUserId: currentUserId,
+      authenticatedUserId: auth.currentUser.uid
+    });
+    return { success: false, message: 'Authentication error. Please sign in again.' };
+  }
+
   if (!currentUserId || !targetUserId) {
     console.error('Invalid user IDs provided');
     return { success: false, message: 'Invalid user information provided' };
@@ -197,9 +211,17 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
   }
 
   try {
-    console.log('Starting block user operation:', { currentUserId, targetUserId });
+    console.log('Starting block user operation with authentication check:', {
+      currentUserId,
+      targetUserId,
+      authenticatedUserId: auth.currentUser.uid,
+      userEmail: auth.currentUser.email
+    });
     
     // Check if already blocked
+    const blockedUserPath = `/users/${currentUserId}/blockedUsers/${targetUserId}`;
+    console.log('Checking if user is already blocked at path:', blockedUserPath);
+    
     const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
     if (blockedUserDoc.exists()) {
       console.log('User is already blocked');
@@ -218,8 +240,20 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
     // Use batch for all operations
     const batch = writeBatch(db);
     
-    // Add to blocked users collection
+    // Add to blocked users collection - ensure path matches security rules
     const blockedUsersRef = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
+    console.log('Writing to blocked users path:', blockedUsersRef.path);
+    console.log('Document data being written:', {
+      uid: targetUserId,
+      blockedUserId: targetUserId,
+      blockedUserInfo: {
+        uid: targetUserId,
+        username: targetUserData.username || 'Unknown',
+        displayName: targetUserData.displayName || 'Unknown User',
+        avatar: targetUserData.avatar || null
+      }
+    });
+    
     batch.set(blockedUsersRef, {
       uid: targetUserId,
       blockedUserId: targetUserId,
@@ -246,23 +280,34 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
       getDoc(doc(db, 'users', targetUserId, 'following', currentUserId))
     ]);
 
+    console.log('Relationship cleanup status:', {
+      currentUserFollowersDoc: currentUserFollowersDoc.exists(),
+      currentUserFollowingDoc: currentUserFollowingDoc.exists(),
+      targetUserFollowersDoc: targetUserFollowersDoc.exists(),
+      targetUserFollowingDoc: targetUserFollowingDoc.exists()
+    });
+
     // Remove from current user's followers if exists
     if (currentUserFollowersDoc.exists()) {
+      console.log('Removing from current user followers');
       batch.delete(doc(db, 'users', currentUserId, 'followers', targetUserId));
     }
     
     // Remove from current user's following if exists
     if (currentUserFollowingDoc.exists()) {
+      console.log('Removing from current user following');
       batch.delete(doc(db, 'users', currentUserId, 'following', targetUserId));
     }
     
     // Remove from target user's followers if exists
     if (targetUserFollowersDoc.exists()) {
+      console.log('Removing from target user followers');
       batch.delete(doc(db, 'users', targetUserId, 'followers', currentUserId));
     }
     
     // Remove from target user's following if exists
     if (targetUserFollowingDoc.exists()) {
+      console.log('Removing from target user following');
       batch.delete(doc(db, 'users', targetUserId, 'following', currentUserId));
     }
     
@@ -272,6 +317,11 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
       getDocs(query(collection(db, 'users', targetUserId, 'followRequests'), where('requesterId', '==', currentUserId)))
     ]);
     
+    console.log('Follow requests cleanup:', {
+      followRequestsToRemove: followRequestsSnapshot.size,
+      targetFollowRequestsToRemove: targetFollowRequestsSnapshot.size
+    });
+    
     followRequestsSnapshot.forEach((doc) => {
       batch.delete(doc.ref);
     });
@@ -280,16 +330,25 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
       batch.delete(doc.ref);
     });
 
+    console.log('Committing batch operation...');
     await batch.commit();
     
     console.log('Block user operation completed successfully');
     return { success: true, message: 'User blocked successfully' };
   } catch (error: any) {
     console.error('Error blocking user:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('Current user auth state:', {
+      uid: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      isAuthenticated: !!auth.currentUser
+    });
     
     // Handle specific Firebase errors
     if (error.code === 'permission-denied') {
-      return { success: false, message: 'Permission denied. Please check your internet connection and try again.' };
+      console.error('Permission denied - checking auth state and document path');
+      return { success: false, message: 'Permission denied. Please make sure you are signed in and try again.' };
     } else if (error.code === 'unavailable') {
       return { success: false, message: 'Service temporarily unavailable. Please try again later.' };
     } else if (error.code === 'not-found') {
@@ -300,17 +359,40 @@ export const blockUser = async (currentUserId: string, targetUserId: string) => 
   }
 };
 
-// Unblock user with improved error handling
+// Unblock user with improved error handling and auth checks
 export const unblockUser = async (currentUserId: string, targetUserId: string) => {
+  // Check if user is authenticated
+  if (!auth.currentUser) {
+    console.error('No authenticated user found');
+    return { success: false, message: 'You must be signed in to unblock users' };
+  }
+
+  // Ensure currentUserId matches authenticated user
+  if (currentUserId !== auth.currentUser.uid) {
+    console.error('Authentication mismatch:', {
+      providedUserId: currentUserId,
+      authenticatedUserId: auth.currentUser.uid
+    });
+    return { success: false, message: 'Authentication error. Please sign in again.' };
+  }
+
   if (!currentUserId || !targetUserId) {
     console.error('Invalid user IDs provided');
     return { success: false, message: 'Invalid user information provided' };
   }
   
   try {
-    console.log('Starting unblock user operation:', { currentUserId, targetUserId });
+    console.log('Starting unblock user operation with authentication check:', {
+      currentUserId,
+      targetUserId,
+      authenticatedUserId: auth.currentUser.uid,
+      userEmail: auth.currentUser.email
+    });
     
     // Check if user is actually blocked
+    const blockedUserPath = `/users/${currentUserId}/blockedUsers/${targetUserId}`;
+    console.log('Checking if user is blocked at path:', blockedUserPath);
+    
     const blockedUserDoc = await getDoc(doc(db, 'users', currentUserId, 'blockedUsers', targetUserId));
     if (!blockedUserDoc.exists()) {
       console.log('User is not blocked');
@@ -318,16 +400,26 @@ export const unblockUser = async (currentUserId: string, targetUserId: string) =
     }
 
     const blockedUsersRef = doc(db, 'users', currentUserId, 'blockedUsers', targetUserId);
+    console.log('Deleting blocked user document at path:', blockedUsersRef.path);
+    
     await deleteDoc(blockedUsersRef);
     
     console.log('Unblock user operation completed successfully');
     return { success: true, message: 'User unblocked successfully' };
   } catch (error: any) {
     console.error('Error unblocking user:', error);
+    console.error('Error code:', error.code);
+    console.error('Error message:', error.message);
+    console.error('Current user auth state:', {
+      uid: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      isAuthenticated: !!auth.currentUser
+    });
     
     // Handle specific Firebase errors
     if (error.code === 'permission-denied') {
-      return { success: false, message: 'Permission denied. Please check your internet connection and try again.' };
+      console.error('Permission denied - checking auth state and document path');
+      return { success: false, message: 'Permission denied. Please make sure you are signed in and try again.' };
     } else if (error.code === 'unavailable') {
       return { success: false, message: 'Service temporarily unavailable. Please try again later.' };
     } else if (error.code === 'not-found') {
