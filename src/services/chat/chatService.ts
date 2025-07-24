@@ -7,7 +7,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { sendMessage } from './messageService';
-import { updateChatListForUsers } from './chatListService';
 import { logger } from '../../utils/logger';
 
 export const createChatId = (userId1: string, userId2: string): string => {
@@ -45,10 +44,7 @@ export const sendChatMessage = async (
   logger.debug('Using chatId', { chatId });
 
   try {
-    // Ensure chat exists
-    await ensureChatExists(currentUserId, receiverId);
-
-    // Send the message
+    // Send the message (this will also create/update the chat document)
     const messageId = await sendMessage(
       chatId,
       currentUserId,
@@ -57,9 +53,6 @@ export const sendChatMessage = async (
       type,
       mediaURL
     );
-
-    // Update chat list for both users
-    await updateChatListForUsers(currentUserId, receiverId, text.trim(), type);
 
     logger.debug('Message sent successfully', { messageId });
     return messageId;
@@ -94,7 +87,7 @@ export const ensureChatExists = async (userId1: string, userId2: string) => {
       return chatId;
     }
 
-    // Get user data
+    // Get user data to ensure both users exist
     const [user1Doc, user2Doc] = await Promise.all([
       getDoc(doc(db, 'users', userId1)),
       getDoc(doc(db, 'users', userId2))
@@ -104,9 +97,9 @@ export const ensureChatExists = async (userId1: string, userId2: string) => {
       throw new Error('One or both users do not exist');
     }
 
-    // Create chat document
+    // Create chat document with proper structure for querying
     const chatData: ChatDocument = {
-      users: [userId1, userId2],
+      users: [userId1, userId2], // This is crucial for array-contains queries
       createdAt: serverTimestamp(),
       lastMessage: {
         text: '',
@@ -118,7 +111,7 @@ export const ensureChatExists = async (userId1: string, userId2: string) => {
     };
 
     await setDoc(doc(db, 'chats', chatId), chatData);
-    logger.debug('Chat document created', { chatId });
+    logger.debug('Chat document created with users array', { chatId, users: [userId1, userId2] });
     
     return chatId;
   } catch (error) {

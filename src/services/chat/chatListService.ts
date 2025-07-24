@@ -5,14 +5,11 @@ import {
   orderBy, 
   onSnapshot,
   doc,
-  setDoc,
   getDoc,
-  getDocs,
   where,
   limit
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
-import { ChatListMetadata } from '../../types/chat';
 import { logger } from '../../utils/logger';
 
 export interface ChatListItem {
@@ -46,12 +43,12 @@ export const subscribeToUserChatList = (
   }
 
   try {
-    // Query chats where the current user is a participant
+    // Query chats where the current user is in the users array
     const chatsRef = collection(db, 'chats');
     const q = query(
       chatsRef,
       where('users', 'array-contains', currentUserId),
-      orderBy('lastMessage.timestamp', 'desc'),
+      orderBy('updatedAt', 'desc'),
       limit(50)
     );
 
@@ -64,14 +61,27 @@ export const subscribeToUserChatList = (
         const chatData = docSnapshot.data();
         const chatId = docSnapshot.id;
         
+        logger.debug('Processing chat document', { 
+          chatId, 
+          users: chatData.users,
+          hasLastMessage: !!chatData.lastMessage?.text,
+          lastMessageText: chatData.lastMessage?.text?.substring(0, 20) + '...'
+        });
+        
         // Get the other user's ID
         const otherUserId = chatData.users?.find((id: string) => id !== currentUserId);
-        if (!otherUserId) continue;
+        if (!otherUserId) {
+          logger.debug('Skipping chat - no other user found', { chatId, users: chatData.users });
+          continue;
+        }
         
-        // Skip if no last message exists
-        if (!chatData.lastMessage?.text) continue;
+        // Skip chats with no last message or empty text
+        if (!chatData.lastMessage?.text || chatData.lastMessage.text.trim() === '') {
+          logger.debug('Skipping chat - no last message', { chatId });
+          continue;
+        }
         
-        // Get user data
+        // Get user data for the other user
         let userData: UserData = {};
         try {
           const userDoc = await getDoc(doc(db, 'users', otherUserId));
@@ -96,14 +106,19 @@ export const subscribeToUserChatList = (
           displayName: userData.displayName || userData.username || 'Unknown User',
           avatar: userData.avatar,
           lastMessage: chatData.lastMessage.text || 'No messages yet',
-          timestamp: chatData.lastMessage.timestamp?.toDate?.()?.getTime() || Date.now(),
+          timestamp: chatData.lastMessage.timestamp?.toDate?.()?.getTime() || chatData.updatedAt?.toDate?.()?.getTime() || Date.now(),
           seen: chatData.lastMessage.senderId === currentUserId || chatData.lastMessage.seen === true
         };
 
         chats.push(chatItem);
+        logger.debug('Added chat to list', { 
+          chatId, 
+          otherUser: userData.username || userData.displayName,
+          lastMessage: chatItem.lastMessage.substring(0, 30) + '...'
+        });
       }
 
-      logger.debug('Processed chat list', { chatCount: chats.length });
+      logger.debug('Final processed chat list', { chatCount: chats.length });
       callback(chats);
     }, (error) => {
       logger.error('Error in chat list subscription', error);
@@ -116,80 +131,5 @@ export const subscribeToUserChatList = (
   }
 };
 
-export const updateChatListForUsers = async (
-  senderId: string,
-  receiverId: string,
-  lastMessage: string,
-  messageType: string = 'text'
-) => {
-  try {
-    logger.debug('Updating chat list for both users', { senderId, receiverId });
-    
-    // Create consistent chatId
-    const sortedIds = [senderId, receiverId].sort();
-    const chatId = sortedIds.join('_');
-    
-    // Get user data for both sender and receiver
-    const [senderDoc, receiverDoc] = await Promise.all([
-      getDoc(doc(db, 'users', senderId)),
-      getDoc(doc(db, 'users', receiverId))
-    ]);
-
-    const senderData = senderDoc.exists() ? senderDoc.data() : null;
-    const receiverData = receiverDoc.exists() ? receiverDoc.data() : null;
-
-    if (!senderData || !receiverData) {
-      logger.warn('Missing user data for chat list update', { 
-        senderExists: !!senderData, 
-        receiverExists: !!receiverData 
-      });
-    }
-
-    const timestamp = new Date();
-
-    // Update the main chat document
-    const chatData = {
-      users: [senderId, receiverId],
-      lastMessage: {
-        text: lastMessage || 'Media message',
-        timestamp: timestamp,
-        senderId: senderId,
-        seen: false
-      },
-      updatedAt: timestamp
-    };
-
-    await setDoc(doc(db, 'chats', chatId), chatData, { merge: true });
-
-    logger.info('Chat document updated successfully');
-  } catch (error) {
-    logger.error('Error updating chat lists', error);
-    throw error;
-  }
-};
-
-// Helper function to ensure chat exists for new conversations
-export const initializeChat = async (userId1: string, userId2: string) => {
-  try {
-    const sortedIds = [userId1, userId2].sort();
-    const chatId = sortedIds.join('_');
-    
-    // Check if chat already exists
-    const chatDoc = await getDoc(doc(db, 'chats', chatId));
-    
-    if (!chatDoc.exists()) {
-      await setDoc(doc(db, 'chats', chatId), {
-        users: [userId1, userId2],
-        lastMessage: {
-          text: '',
-          timestamp: new Date(),
-          senderId: '',
-          seen: true
-        },
-        createdAt: new Date()
-      });
-    }
-  } catch (error) {
-    logger.error('Error initializing chat', error);
-  }
-};
+// Remove the updateChatListForUsers function as it's now handled in messageService
+// Remove the initializeChat function as it's now handled in chatService

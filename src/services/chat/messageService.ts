@@ -11,11 +11,12 @@ import {
   where,
   getDocs,
   updateDoc,
-  limit
+  limit,
+  setDoc,
+  getDoc
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ChatMessage } from '../../types/chat';
-import { updateChatListForUsers, initializeChat } from './chatListService';
 import { logger } from '../../utils/logger';
 
 interface MessageData {
@@ -103,10 +104,44 @@ export const sendMessage = async (
   }
 
   try {
-    // Initialize chat list entries if this is a new conversation
-    await initializeChat(senderId, receiverId);
+    // Use a batch to ensure both message and chat document are updated atomically
+    const batch = writeBatch(db);
+    
+    // First, ensure the chat document exists with proper structure
+    const chatDocRef = doc(db, 'chats', chatId);
+    const chatDoc = await getDoc(chatDocRef);
+    
+    if (!chatDoc.exists()) {
+      // Create the chat document if it doesn't exist
+      batch.set(chatDocRef, {
+        users: [senderId, receiverId],
+        createdAt: serverTimestamp(),
+        lastMessage: {
+          text: text.trim(),
+          timestamp: serverTimestamp(),
+          senderId: senderId,
+          seen: false
+        },
+        updatedAt: serverTimestamp()
+      });
+      logger.debug('Creating new chat document', { chatId });
+    } else {
+      // Update existing chat document with new last message
+      batch.update(chatDocRef, {
+        lastMessage: {
+          text: text.trim(),
+          timestamp: serverTimestamp(),
+          senderId: senderId,
+          seen: false
+        },
+        updatedAt: serverTimestamp()
+      });
+      logger.debug('Updating existing chat document', { chatId });
+    }
 
+    // Add the message to the messages subcollection
     const messagesRef = collection(db, 'chats', chatId, 'messages');
+    const messageDocRef = doc(messagesRef);
     
     const messageData: MessageData = {
       text: text.trim(),
@@ -119,16 +154,13 @@ export const sendMessage = async (
       mediaURL: mediaURL || null
     };
 
-    logger.debug('Saving message to Firestore...');
+    batch.set(messageDocRef, messageData);
     
-    // First save the message and wait for it to complete
-    const docRef = await addDoc(messagesRef, messageData);
-    logger.debug('Message saved', { messageId: docRef.id });
-
-    // Then update chat lists for both users
-    await updateChatListForUsers(senderId, receiverId, text.trim(), type);
+    // Commit the batch
+    await batch.commit();
+    logger.debug('Message and chat document updated successfully', { messageId: messageDocRef.id });
     
-    return docRef.id;
+    return messageDocRef.id;
   } catch (error) {
     logger.error('Failed to send message', error);
     throw new Error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -158,16 +190,21 @@ export const markMessagesAsSeen = async (chatId: string, userId: string) => {
       });
     });
     
+    // Also update the chat document's last message seen status if needed
+    const chatDocRef = doc(db, 'chats', chatId);
+    const chatDoc = await getDoc(chatDocRef);
+    
+    if (chatDoc.exists()) {
+      const chatData = chatDoc.data();
+      if (chatData.lastMessage && chatData.lastMessage.senderId !== userId) {
+        batch.update(chatDocRef, {
+          'lastMessage.seen': true
+        });
+      }
+    }
+    
     await batch.commit();
     logger.debug('Messages marked as seen');
-
-    // Update chat list to show as seen
-    const otherUserId = chatId.split('_').find(id => id !== userId);
-    if (otherUserId) {
-      await updateDoc(doc(db, 'chatList', userId, 'chats', otherUserId), {
-        seen: true
-      });
-    }
   } catch (error) {
     logger.error('Error marking messages as seen', error);
   }
