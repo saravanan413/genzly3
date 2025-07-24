@@ -1,4 +1,3 @@
-
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -42,40 +41,50 @@ service cloud.firestore {
       }
     }
     
-    // Chat documents - CRITICAL: only participants can access based on users array
+    // PERSISTENT CHAT DOCUMENTS - Main chat collection for chat list persistence
     match /chats/{chatId} {
+      // Only users in the 'users' array can read/write the chat document
       allow read: if request.auth != null && 
         request.auth.uid in resource.data.users;
-      allow write: if request.auth != null && 
+      
+      // Allow updates to chat document if user is in the users array
+      allow update: if request.auth != null && 
         request.auth.uid in resource.data.users;
+      
+      // Allow creation of chat document if:
+      // 1. User is authenticated
+      // 2. User is in the users array of the document being created
+      // 3. Users array contains exactly 2 users (1-on-1 chat)
       allow create: if request.auth != null && 
         request.auth.uid in request.resource.data.users &&
-        request.resource.data.users.size() == 2;
+        request.resource.data.users.size() == 2 &&
+        request.resource.data.keys().hasAll(['users', 'lastMessage', 'createdAt', 'updatedAt']);
+      
+      // Chat messages subcollection
+      match /messages/{messageId} {
+        // Only chat participants can read messages
+        allow read: if request.auth != null && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+        
+        // Only chat participants can create messages, and only if they are the sender
+        allow create: if request.auth != null && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users &&
+          request.auth.uid == request.resource.data.senderId;
+        
+        // Allow updates for marking messages as seen
+        allow update: if request.auth != null && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+      }
+      
+      // Chat typing indicators
+      match /typing/{userId} {
+        allow read: if request.auth != null && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
+        allow write: if request.auth != null && 
+          request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users &&
+          request.auth.uid == userId;
+      }
     }
-    
-    // Chat messages - only participants can access
-    match /chats/{chatId}/messages/{messageId} {
-      allow read: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-      allow write: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-      allow create: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users &&
-        request.auth.uid == request.resource.data.senderId;
-    }
-    
-    // Chat typing indicators - only participants can access
-    match /chats/{chatId}/typing/{userId} {
-      allow read: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-      allow write: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users;
-      allow create: if request.auth != null && 
-        request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.users &&
-        request.auth.uid == userId;
-    }
-    
-    // Remove old chatList collection rules as we're using the main chats collection now
     
     // Posts - users can read all, write their own
     match /posts/{postId} {

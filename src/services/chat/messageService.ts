@@ -10,7 +10,6 @@ import {
   writeBatch,
   where,
   getDocs,
-  updateDoc,
   limit,
   setDoc,
   getDoc
@@ -28,6 +27,18 @@ interface MessageData {
   status: 'sent' | 'delivered' | 'seen';
   type: 'text' | 'voice' | 'image' | 'video';
   mediaURL: string | null;
+}
+
+interface ChatDocument {
+  users: string[];
+  lastMessage: {
+    text: string;
+    timestamp: ReturnType<typeof serverTimestamp>;
+    senderId: string;
+    seen: boolean;
+  };
+  createdAt: ReturnType<typeof serverTimestamp>;
+  updatedAt: ReturnType<typeof serverTimestamp>;
 }
 
 export const subscribeToChatMessages = (
@@ -87,7 +98,7 @@ export const sendMessage = async (
   type: 'text' | 'voice' | 'image' | 'video' = 'text',
   mediaURL?: string
 ): Promise<string> => {
-  logger.debug('Sending message to Firestore', {
+  logger.debug('Sending message and updating chat document', {
     chatId,
     senderId,
     receiverId,
@@ -104,42 +115,39 @@ export const sendMessage = async (
   }
 
   try {
-    // Use a batch to ensure both message and chat document are updated atomically
+    // Use a batch to ensure atomicity - both message and chat document updated together
     const batch = writeBatch(db);
     
-    // First, ensure the chat document exists with proper structure
+    // 1. Create/Update the main chat document in /chats/{chatId}
     const chatDocRef = doc(db, 'chats', chatId);
     const chatDoc = await getDoc(chatDocRef);
     
-    if (!chatDoc.exists()) {
-      // Create the chat document if it doesn't exist
-      batch.set(chatDocRef, {
-        users: [senderId, receiverId],
-        createdAt: serverTimestamp(),
-        lastMessage: {
-          text: text.trim(),
-          timestamp: serverTimestamp(),
-          senderId: senderId,
-          seen: false
-        },
-        updatedAt: serverTimestamp()
-      });
-      logger.debug('Creating new chat document', { chatId });
-    } else {
-      // Update existing chat document with new last message
+    const chatData: ChatDocument = {
+      users: [senderId, receiverId],
+      lastMessage: {
+        text: text.trim(),
+        timestamp: serverTimestamp(),
+        senderId: senderId,
+        seen: false
+      },
+      createdAt: chatDoc.exists() ? chatDoc.data()?.createdAt : serverTimestamp(),
+      updatedAt: serverTimestamp()
+    };
+
+    if (chatDoc.exists()) {
+      // Update existing chat
       batch.update(chatDocRef, {
-        lastMessage: {
-          text: text.trim(),
-          timestamp: serverTimestamp(),
-          senderId: senderId,
-          seen: false
-        },
-        updatedAt: serverTimestamp()
+        lastMessage: chatData.lastMessage,
+        updatedAt: chatData.updatedAt
       });
       logger.debug('Updating existing chat document', { chatId });
+    } else {
+      // Create new chat document
+      batch.set(chatDocRef, chatData);
+      logger.debug('Creating new chat document', { chatId, users: [senderId, receiverId] });
     }
 
-    // Add the message to the messages subcollection
+    // 2. Add the message to the messages subcollection
     const messagesRef = collection(db, 'chats', chatId, 'messages');
     const messageDocRef = doc(messagesRef);
     
@@ -156,13 +164,17 @@ export const sendMessage = async (
 
     batch.set(messageDocRef, messageData);
     
-    // Commit the batch
+    // 3. Commit the batch - this ensures both operations succeed or fail together
     await batch.commit();
-    logger.debug('Message and chat document updated successfully', { messageId: messageDocRef.id });
+    
+    logger.debug('Message sent and chat document updated successfully', { 
+      messageId: messageDocRef.id,
+      chatId 
+    });
     
     return messageDocRef.id;
   } catch (error) {
-    logger.error('Failed to send message', error);
+    logger.error('Failed to send message and update chat', error);
     throw new Error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 };
@@ -196,7 +208,7 @@ export const markMessagesAsSeen = async (chatId: string, userId: string) => {
     
     if (chatDoc.exists()) {
       const chatData = chatDoc.data();
-      if (chatData.lastMessage && chatData.lastMessage.senderId !== userId) {
+      if (chatData?.lastMessage && chatData.lastMessage.senderId !== userId) {
         batch.update(chatDocRef, {
           'lastMessage.seen': true
         });
