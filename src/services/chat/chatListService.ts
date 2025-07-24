@@ -8,7 +8,8 @@ import {
   setDoc,
   getDoc,
   getDocs,
-  where
+  where,
+  limit
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ChatListMetadata } from '../../types/chat';
@@ -45,8 +46,14 @@ export const subscribeToUserChatList = (
   }
 
   try {
-    const userChatsRef = collection(db, 'chatList', currentUserId, 'chats');
-    const q = query(userChatsRef, orderBy('timestamp', 'desc'));
+    // Query chats where the current user is a participant
+    const chatsRef = collection(db, 'chats');
+    const q = query(
+      chatsRef,
+      where('users', 'array-contains', currentUserId),
+      orderBy('lastMessage.timestamp', 'desc'),
+      limit(50)
+    );
 
     return onSnapshot(q, async (snapshot) => {
       logger.debug('Chat list updated', { chatCount: snapshot.size });
@@ -54,47 +61,43 @@ export const subscribeToUserChatList = (
       const chats: ChatListItem[] = [];
       
       for (const docSnapshot of snapshot.docs) {
-        const data = docSnapshot.data() as ChatListMetadata;
-        const receiverId = docSnapshot.id;
+        const chatData = docSnapshot.data();
+        const chatId = docSnapshot.id;
         
-        // Get fresh user data if not cached in metadata
+        // Get the other user's ID
+        const otherUserId = chatData.users?.find((id: string) => id !== currentUserId);
+        if (!otherUserId) continue;
+        
+        // Skip if no last message exists
+        if (!chatData.lastMessage?.text) continue;
+        
+        // Get user data
         let userData: UserData = {};
-        if (data.userInfo?.name) {
-          userData = {
-            displayName: data.userInfo.name,
-            avatar: data.userInfo.profileImage
-          };
-        } else {
-          // Fetch user data from users collection
-          try {
-            const userDoc = await getDoc(doc(db, 'users', receiverId));
-            if (userDoc.exists()) {
-              const userDocData = userDoc.data();
-              userData = {
-                username: userDocData.username,
-                displayName: userDocData.displayName,
-                avatar: userDocData.avatar,
-                email: userDocData.email
-              };
-            }
-          } catch (error) {
-            logger.warn('Failed to fetch user data', { receiverId, error });
+        try {
+          const userDoc = await getDoc(doc(db, 'users', otherUserId));
+          if (userDoc.exists()) {
+            const userDocData = userDoc.data();
+            userData = {
+              username: userDocData.username,
+              displayName: userDocData.displayName,
+              avatar: userDocData.avatar,
+              email: userDocData.email
+            };
           }
+        } catch (error) {
+          logger.warn('Failed to fetch user data', { otherUserId, error });
+          continue;
         }
-
-        // Create consistent chatId
-        const sortedIds = [currentUserId, receiverId].sort();
-        const chatId = sortedIds.join('_');
 
         const chatItem: ChatListItem = {
           chatId,
-          receiverId,
+          receiverId: otherUserId,
           username: userData.username || userData.displayName || userData.email?.split('@')[0] || 'Unknown User',
           displayName: userData.displayName || userData.username || 'Unknown User',
           avatar: userData.avatar,
-          lastMessage: data.lastMessage || 'No messages yet',
-          timestamp: data.timestamp || Date.now(),
-          seen: data.seen || false
+          lastMessage: chatData.lastMessage.text || 'No messages yet',
+          timestamp: chatData.lastMessage.timestamp?.toDate?.()?.getTime() || Date.now(),
+          seen: chatData.lastMessage.senderId === currentUserId || chatData.lastMessage.seen === true
         };
 
         chats.push(chatItem);
@@ -122,6 +125,10 @@ export const updateChatListForUsers = async (
   try {
     logger.debug('Updating chat list for both users', { senderId, receiverId });
     
+    // Create consistent chatId
+    const sortedIds = [senderId, receiverId].sort();
+    const chatId = sortedIds.join('_');
+    
     // Get user data for both sender and receiver
     const [senderDoc, receiverDoc] = await Promise.all([
       getDoc(doc(db, 'users', senderId)),
@@ -138,58 +145,49 @@ export const updateChatListForUsers = async (
       });
     }
 
-    const timestamp = Date.now();
+    const timestamp = new Date();
 
-    // Update sender's chat list - save receiver's info
-    const senderChatMetadata: ChatListMetadata = {
-      lastMessage: lastMessage || 'Media message',
-      timestamp: timestamp,
-      userInfo: {
-        name: receiverData?.displayName || receiverData?.username || 'Unknown',
-        profileImage: receiverData?.avatar || undefined
+    // Update the main chat document
+    const chatData = {
+      users: [senderId, receiverId],
+      lastMessage: {
+        text: lastMessage || 'Media message',
+        timestamp: timestamp,
+        senderId: senderId,
+        seen: false
       },
-      seen: true // Sender has seen their own message
+      updatedAt: timestamp
     };
 
-    await setDoc(doc(db, 'chatList', senderId, 'chats', receiverId), senderChatMetadata, { merge: true });
+    await setDoc(doc(db, 'chats', chatId), chatData, { merge: true });
 
-    // Update receiver's chat list - save sender's info
-    const receiverChatMetadata: ChatListMetadata = {
-      lastMessage: lastMessage || 'Media message',
-      timestamp: timestamp,
-      userInfo: {
-        name: senderData?.displayName || senderData?.username || 'Unknown',
-        profileImage: senderData?.avatar || undefined
-      },
-      seen: false // Receiver hasn't seen the message yet
-    };
-
-    await setDoc(doc(db, 'chatList', receiverId, 'chats', senderId), receiverChatMetadata, { merge: true });
-
-    logger.info('Chat lists updated successfully for both users');
+    logger.info('Chat document updated successfully');
   } catch (error) {
     logger.error('Error updating chat lists', error);
     throw error;
   }
 };
 
-// Helper function to ensure chat list entries exist for new conversations
+// Helper function to ensure chat exists for new conversations
 export const initializeChat = async (userId1: string, userId2: string) => {
   try {
-    // Check if chat list entries already exist
-    const [user1ChatRef, user2ChatRef] = [
-      doc(db, 'chatList', userId1, 'chats', userId2),
-      doc(db, 'chatList', userId2, 'chats', userId1)
-    ];
-
-    const [user1Chat, user2Chat] = await Promise.all([
-      getDoc(user1ChatRef),
-      getDoc(user2ChatRef)
-    ]);
-
-    // If either doesn't exist, create initial entries
-    if (!user1Chat.exists() || !user2Chat.exists()) {
-      await updateChatListForUsers(userId1, userId2, '', 'text');
+    const sortedIds = [userId1, userId2].sort();
+    const chatId = sortedIds.join('_');
+    
+    // Check if chat already exists
+    const chatDoc = await getDoc(doc(db, 'chats', chatId));
+    
+    if (!chatDoc.exists()) {
+      await setDoc(doc(db, 'chats', chatId), {
+        users: [userId1, userId2],
+        lastMessage: {
+          text: '',
+          timestamp: new Date(),
+          senderId: '',
+          seen: true
+        },
+        createdAt: new Date()
+      });
     }
   } catch (error) {
     logger.error('Error initializing chat', error);

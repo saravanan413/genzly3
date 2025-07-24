@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { sendMessage } from './messageService';
+import { updateChatListForUsers } from './chatListService';
 import { logger } from '../../utils/logger';
 
 export const createChatId = (userId1: string, userId2: string): string => {
@@ -57,6 +58,9 @@ export const sendChatMessage = async (
       mediaURL
     );
 
+    // Update chat list for both users
+    await updateChatListForUsers(currentUserId, receiverId, text.trim(), type);
+
     logger.debug('Message sent successfully', { messageId });
     return messageId;
   } catch (error) {
@@ -74,6 +78,7 @@ interface ChatDocument {
     senderId: string;
     seen: boolean;
   };
+  updatedAt: ReturnType<typeof serverTimestamp>;
 }
 
 export const ensureChatExists = async (userId1: string, userId2: string) => {
@@ -108,7 +113,8 @@ export const ensureChatExists = async (userId1: string, userId2: string) => {
         timestamp: serverTimestamp(),
         senderId: '',
         seen: true
-      }
+      },
+      updatedAt: serverTimestamp()
     };
 
     await setDoc(doc(db, 'chats', chatId), chatData);
