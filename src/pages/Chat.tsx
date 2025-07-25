@@ -5,7 +5,11 @@ import Layout from '../components/Layout';
 import ChatHeader from '../components/chat/ChatHeader';
 import ChatList from '../components/chat/ChatList';
 import { useAuth } from '../contexts/AuthContext';
-import { subscribeToUserChatList, ChatListItem } from '../services/chat/chatListService';
+import { 
+  subscribeToUserChatList, 
+  ChatListItem, 
+  clearCachedChatList 
+} from '../services/chat/chatListService';
 import { logger } from '../utils/logger';
 
 const Chat = () => {
@@ -13,29 +17,46 @@ const Chat = () => {
   const [likedChats, setLikedChats] = useState<string[]>([]);
   const [chatList, setChatList] = useState<ChatListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [isFromCache, setIsFromCache] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+  const { currentUser, loading: authLoading } = useAuth();
 
-  // Subscribe to user's chat list with real-time updates
+  // Subscribe to user's chat list with real-time updates and caching
   useEffect(() => {
-    if (!currentUser?.uid) {
-      logger.debug('No current user, cannot load chat list');
-      setLoading(false);
-      setError(null);
-      setChatList([]);
+    // Wait for auth to be initialized
+    if (authLoading) {
       return;
     }
 
-    logger.debug('Setting up real-time chat list subscription', { userId: currentUser.uid });
+    if (!currentUser?.uid) {
+      logger.debug('No current user, clearing chat list');
+      setLoading(false);
+      setError(null);
+      setChatList([]);
+      setIsFromCache(false);
+      return;
+    }
+
+    logger.debug('Setting up chat list with caching', { userId: currentUser.uid });
     setLoading(true);
     setError(null);
     
     try {
-      const unsubscribe = subscribeToUserChatList(currentUser.uid, (chats) => {
-        logger.debug('Real-time chat list update received', { chatCount: chats.length });
+      const unsubscribe = subscribeToUserChatList(currentUser.uid, (chats, fromCache) => {
+        logger.debug('Chat list update received', { 
+          chatCount: chats.length, 
+          fromCache 
+        });
+        
         setChatList(chats);
-        setLoading(false);
+        setIsFromCache(fromCache);
+        
+        // Only set loading to false after we get live data or if no cache exists
+        if (!fromCache || chats.length === 0) {
+          setLoading(false);
+        }
+        
         setError(null);
       });
 
@@ -50,7 +71,15 @@ const Chat = () => {
       setError('Failed to load chat list');
       setLoading(false);
     }
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, authLoading]);
+
+  // Clean up cache on logout
+  useEffect(() => {
+    if (!currentUser && !authLoading) {
+      logger.debug('User logged out, clearing chat cache');
+      clearCachedChatList();
+    }
+  }, [currentUser, authLoading]);
 
   const handleDoubleTap = (receiverId: string) => {
     if (!likedChats.includes(receiverId)) {
@@ -82,11 +111,26 @@ const Chat = () => {
     lastMessage: chat.lastMessage ? {
       text: chat.lastMessage,
       timestamp: chat.timestamp,
-      senderId: chat.receiverId, // Assuming the last message is from the other user
+      senderId: chat.receiverId,
       seen: chat.seen
     } : null,
     unreadCount: chat.seen ? 0 : 1
   }));
+
+  // Show loading only if we're still loading auth or if we have no cache and no data
+  const showLoading = authLoading || (loading && !isFromCache);
+
+  if (authLoading) {
+    return (
+      <Layout>
+        <div className="p-4 md:p-6 w-full bg-background dark:bg-gray-900">
+          <div className="flex items-center justify-center py-16">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   if (!currentUser) {
     return (
@@ -126,6 +170,13 @@ const Chat = () => {
         <div className="w-full max-w-2xl mx-auto">
           <ChatHeader onNewChat={handleNewChat} />
           
+          {/* Cache indicator for debugging */}
+          {isFromCache && !loading && (
+            <div className="mb-2 text-xs text-muted-foreground text-center">
+              Showing cached chats • Syncing...
+            </div>
+          )}
+          
           <div className="mb-6">
             <div className="relative">
               <input
@@ -140,7 +191,7 @@ const Chat = () => {
 
           <ChatList
             chatPreviews={chatPreviews}
-            loading={loading}
+            loading={showLoading}
             searchQuery={searchQuery}
             currentUserId={currentUser.uid}
             onChatClick={handleChatClick}

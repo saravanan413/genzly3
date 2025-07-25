@@ -1,4 +1,3 @@
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import { 
   getAuth,
@@ -72,6 +71,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } else {
         setUserProfile(null);
+        // Clear chat cache when user logs out
+        try {
+          const { clearCachedChatList } = await import('../services/chat/chatListService');
+          clearCachedChatList();
+        } catch (error) {
+          logger.error('Error clearing chat cache on logout', error);
+        }
       }
       
       setLoading(false);
@@ -126,6 +132,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async (): Promise<void> => {
     try {
+      // Clear chat cache before logging out
+      const { clearCachedChatList } = await import('../services/chat/chatListService');
+      clearCachedChatList();
+      
       await authServiceLogout();
     } catch (error) {
       logger.error('Logout failed', error);
