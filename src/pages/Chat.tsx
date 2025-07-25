@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
@@ -49,6 +48,7 @@ const Chat = () => {
           fromCache 
         });
         
+        // Always update the full chat list (don't append, replace completely)
         setChatList(chats);
         setIsFromCache(fromCache);
         
@@ -173,7 +173,7 @@ const Chat = () => {
           {/* Cache indicator for debugging */}
           {isFromCache && !loading && (
             <div className="mb-2 text-xs text-muted-foreground text-center">
-              Showing cached chats • Syncing...
+              Showing cached chats ({chatList.length}) • Syncing...
             </div>
           )}
           

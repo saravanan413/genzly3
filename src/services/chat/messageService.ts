@@ -1,4 +1,3 @@
-
 import { 
   collection, 
   addDoc, 
@@ -134,18 +133,9 @@ export const sendMessage = async (
       updatedAt: serverTimestamp()
     };
 
-    if (chatDoc.exists()) {
-      // Update existing chat
-      batch.update(chatDocRef, {
-        lastMessage: chatData.lastMessage,
-        updatedAt: chatData.updatedAt
-      });
-      logger.debug('Updating existing chat document', { chatId });
-    } else {
-      // Create new chat document
-      batch.set(chatDocRef, chatData);
-      logger.debug('Creating new chat document', { chatId, users: [senderId, receiverId] });
-    }
+    // Always update the chat document (create or update)
+    batch.set(chatDocRef, chatData, { merge: true });
+    logger.debug('Updating chat document with latest message', { chatId, users: [senderId, receiverId] });
 
     // 2. Add the message to the messages subcollection
     const messagesRef = collection(db, 'chats', chatId, 'messages');

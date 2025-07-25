@@ -115,26 +115,25 @@ export const subscribeToUserChatList = (
     return onSnapshot(q, async (snapshot) => {
       logger.debug('Live chat list updated', { chatCount: snapshot.size });
       
-      const chats: ChatListItem[] = [];
-      
-      for (const docSnapshot of snapshot.docs) {
+      // Process all chats in parallel instead of sequentially
+      const chatPromises = snapshot.docs.map(async (docSnapshot) => {
         const chatData = docSnapshot.data();
         const chatId = docSnapshot.id;
         
         // Skip chats without users array or if user is not in it
         if (!chatData.users || !Array.isArray(chatData.users) || !chatData.users.includes(currentUserId)) {
-          continue;
+          return null;
         }
         
         // Get the other user's ID
         const otherUserId = chatData.users.find((id: string) => id !== currentUserId);
         if (!otherUserId) {
-          continue;
+          return null;
         }
         
         // Skip chats without a last message (empty chats)
         if (!chatData.lastMessage?.text || chatData.lastMessage.text.trim() === '') {
-          continue;
+          return null;
         }
         
         // Get user data for the other user
@@ -150,11 +149,11 @@ export const subscribeToUserChatList = (
               email: userDocData.email
             };
           } else {
-            continue;
+            return null;
           }
         } catch (error) {
           logger.warn('Failed to fetch other user data', { otherUserId, error });
-          continue;
+          return null;
         }
 
         const chatItem: ChatListItem = {
@@ -168,8 +167,16 @@ export const subscribeToUserChatList = (
           seen: chatData.lastMessage.senderId === currentUserId || chatData.lastMessage.seen === true
         };
 
-        chats.push(chatItem);
-      }
+        return chatItem;
+      });
+
+      // Wait for all chat processing to complete
+      const chatResults = await Promise.all(chatPromises);
+      
+      // Filter out null results and sort by timestamp descending
+      const chats = chatResults
+        .filter((chat): chat is ChatListItem => chat !== null)
+        .sort((a, b) => b.timestamp - a.timestamp);
 
       // Cache the updated chat list
       setCachedChatList(currentUserId, chats);
