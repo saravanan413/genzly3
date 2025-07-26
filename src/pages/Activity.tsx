@@ -1,56 +1,21 @@
 
-import { Heart, MessageCircle, UserPlus } from 'lucide-react';
+import React from 'react';
+import { Heart, MessageCircle, UserPlus, User } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
-
-const activities = [
-  {
-    id: 1,
-    type: 'like',
-    user: 'sarah_jones',
-    avatar: 'https://via.placeholder.com/40/FF69B4/FFFFFF?Text=S',
-    message: 'liked your photo',
-    time: '2m',
-    postImage: 'https://images.unsplash.com/photo-1486312338219-ce68d2c6f44d?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=60'
-  },
-  {
-    id: 2,
-    type: 'comment',
-    user: 'mike_photographer',
-    avatar: 'https://via.placeholder.com/40/4169E1/FFFFFF?Text=M',
-    message: 'commented: "Amazing shot! 📸"',
-    time: '5m',
-    postImage: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=60'
-  },
-  {
-    id: 3,
-    type: 'follow',
-    user: 'travel_blogger_jane',
-    avatar: 'https://via.placeholder.com/40/32CD32/FFFFFF?Text=J',
-    message: 'started following you',
-    time: '1h',
-    postImage: null
-  },
-  {
-    id: 4,
-    type: 'like',
-    user: 'foodie_expert',
-    avatar: 'https://via.placeholder.com/40/FF6347/FFFFFF?Text=F',
-    message: 'liked your photo',
-    time: '2h',
-    postImage: 'https://images.unsplash.com/photo-1465146344425-f00d5f5c8f07?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=60'
-  },
-  {
-    id: 5,
-    type: 'comment',
-    user: 'tech_enthusiast',
-    avatar: 'https://via.placeholder.com/40/9370DB/FFFFFF?Text=T',
-    message: 'commented: "Love this setup! 💻"',
-    time: '3h',
-    postImage: 'https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=100&q=60'
-  },
-];
+import { useNotifications } from '../hooks/useNotifications';
+import { Badge } from '../components/ui/badge';
 
 const Activity = () => {
+  const navigate = useNavigate();
+  const { 
+    notifications, 
+    loading, 
+    markAsSeen, 
+    getNotificationMessage, 
+    getRelativeTime 
+  } = useNotifications();
+
   const getActivityIcon = (type: string) => {
     switch (type) {
       case 'like':
@@ -60,9 +25,51 @@ const Activity = () => {
       case 'follow':
         return <UserPlus className="text-green-500" size={16} />;
       default:
-        return <Heart className="text-gray-400" size={16} />;
+        return <User className="text-gray-400" size={16} />;
     }
   };
+
+  const handleNotificationClick = async (notification: any) => {
+    // Mark as seen
+    if (!notification.seen) {
+      await markAsSeen(notification.id);
+    }
+
+    // Navigate based on type
+    if (notification.type === 'like' || notification.type === 'comment') {
+      if (notification.postId) {
+        navigate(`/post/${notification.postId}`);
+      }
+    } else if (notification.type === 'follow') {
+      navigate(`/user/${notification.senderId}`);
+    } else if (notification.type === 'message') {
+      navigate(`/chat/${notification.chatId}`);
+    }
+  };
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="p-4">
+          <div className="container mx-auto max-w-lg">
+            <h1 className="text-2xl font-bold mb-6">Activity</h1>
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <div key={i} className="flex items-center space-x-3 p-3 bg-card rounded-lg border animate-pulse">
+                  <div className="w-10 h-10 rounded-full bg-gray-300"></div>
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-gray-300 rounded w-3/4"></div>
+                    <div className="h-3 bg-gray-300 rounded w-1/4"></div>
+                  </div>
+                  <div className="w-12 h-12 rounded bg-gray-300"></div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -70,38 +77,78 @@ const Activity = () => {
         <div className="container mx-auto max-w-lg">
           <h1 className="text-2xl font-bold mb-6">Activity</h1>
           
-          <div className="space-y-4">
-            {activities.map((activity) => (
-              <div key={activity.id} className="flex items-center space-x-3 p-3 bg-card rounded-lg border">
-                <div className="relative">
-                  <img 
-                    src={activity.avatar} 
-                    alt={activity.user} 
-                    className="w-10 h-10 rounded-full"
-                  />
-                  <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-1">
-                    {getActivityIcon(activity.type)}
-                  </div>
-                </div>
-                
-                <div className="flex-1">
-                  <p className="text-sm">
-                    <span className="font-semibold">{activity.user}</span>{' '}
-                    <span className="text-muted-foreground">{activity.message}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">{activity.time}</p>
-                </div>
-                
-                {activity.postImage && (
-                  <img 
-                    src={activity.postImage} 
-                    alt="Post" 
-                    className="w-12 h-12 rounded object-cover"
-                  />
-                )}
+          {notifications.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
+                <Heart className="text-gray-400" size={32} />
               </div>
-            ))}
-          </div>
+              <p className="text-gray-500 text-lg font-medium">No activity yet</p>
+              <p className="text-gray-400 text-sm">When people like, comment, or follow you, you'll see it here.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {notifications.map((notification) => (
+                <div 
+                  key={notification.id} 
+                  className={`flex items-center space-x-3 p-3 bg-card rounded-lg border cursor-pointer hover:bg-gray-50 transition-colors ${
+                    !notification.seen ? 'ring-2 ring-blue-200 bg-blue-50' : ''
+                  }`}
+                  onClick={() => handleNotificationClick(notification)}
+                >
+                  <div className="relative">
+                    <img 
+                      src={
+                        notification.senderProfile?.avatar || 
+                        `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          notification.senderProfile?.displayName || 'User'
+                        )}&background=eee&color=555&size=40`
+                      }
+                      alt={notification.senderProfile?.displayName || 'User'} 
+                      className="w-10 h-10 rounded-full object-cover"
+                      onError={(e) => {
+                        const target = e.target as HTMLImageElement;
+                        target.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(
+                          notification.senderProfile?.displayName || 'User'
+                        )}&background=eee&color=555&size=40`;
+                      }}
+                    />
+                    <div className="absolute -bottom-1 -right-1 bg-background rounded-full p-1 border">
+                      {getActivityIcon(notification.type)}
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1">
+                    <p className="text-sm">
+                      <span className="font-semibold">
+                        {notification.senderProfile?.username || 'Unknown User'}
+                      </span>{' '}
+                      <span className="text-muted-foreground">
+                        {getNotificationMessage(notification)}
+                      </span>
+                    </p>
+                    <div className="flex items-center space-x-2 mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {getRelativeTime(notification.timestamp)}
+                      </p>
+                      {!notification.seen && (
+                        <Badge variant="destructive" className="text-xs px-1 py-0">
+                          New
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  
+                  {notification.postThumbnail && (
+                    <img 
+                      src={notification.postThumbnail} 
+                      alt="Post" 
+                      className="w-12 h-12 rounded object-cover"
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </Layout>
