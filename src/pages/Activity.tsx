@@ -4,7 +4,6 @@ import { Heart, MessageCircle, UserPlus, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import { useNotifications } from '../hooks/useNotifications';
-import { Badge } from '../components/ui/badge';
 
 const Activity = () => {
   const navigate = useNavigate();
@@ -82,17 +81,15 @@ const Activity = () => {
               <div className="w-20 h-20 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
                 <Heart className="text-gray-400" size={32} />
               </div>
-              <p className="text-gray-500 text-lg font-medium">No activity yet</p>
-              <p className="text-gray-400 text-sm">When people like, comment, or follow you, you'll see it here.</p>
+              <h3 className="text-gray-900 text-lg font-medium mb-2">No activity yet</h3>
+              <p className="text-gray-500 text-sm">When people like, comment, or follow you, you'll see it here.</p>
             </div>
           ) : (
             <div className="space-y-4">
               {notifications.map((notification) => (
                 <div 
                   key={notification.id} 
-                  className={`flex items-center space-x-3 p-3 bg-card rounded-lg border cursor-pointer hover:bg-gray-50 transition-colors ${
-                    !notification.seen ? 'ring-2 ring-blue-200 bg-blue-50' : ''
-                  }`}
+                  className="flex items-center space-x-3 p-3 bg-card rounded-lg border cursor-pointer hover:bg-gray-50 transition-colors"
                   onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="relative">
@@ -126,16 +123,9 @@ const Activity = () => {
                         {getNotificationMessage(notification)}
                       </span>
                     </p>
-                    <div className="flex items-center space-x-2 mt-1">
-                      <p className="text-xs text-muted-foreground">
-                        {getRelativeTime(notification.timestamp)}
-                      </p>
-                      {!notification.seen && (
-                        <Badge variant="destructive" className="text-xs px-1 py-0">
-                          New
-                        </Badge>
-                      )}
-                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {getRelativeTime(notification.timestamp)}
+                    </p>
                   </div>
                   
                   {notification.postThumbnail && (

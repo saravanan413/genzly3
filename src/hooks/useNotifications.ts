@@ -55,6 +55,28 @@ export const useNotifications = () => {
     }
   };
 
+  const markAllAsSeen = async () => {
+    try {
+      const unseenNotifications = notifications.filter(n => !n.seen);
+      
+      // Mark all unseen notifications as seen
+      await Promise.all(
+        unseenNotifications.map(notification => 
+          markNotificationAsSeen(notification.id)
+        )
+      );
+      
+      // Update local state optimistically
+      setNotifications(prev => 
+        prev.map(notification => ({ ...notification, seen: true }))
+      );
+      
+      setUnreadCount(0);
+    } catch (error) {
+      console.error('Error marking all notifications as seen:', error);
+    }
+  };
+
   const getNotificationMessage = (notification: Notification): string => {
     switch (notification.type) {
       case 'like':
@@ -89,6 +111,7 @@ export const useNotifications = () => {
     unreadCount,
     loading,
     markAsSeen,
+    markAllAsSeen,
     getNotificationMessage,
     getRelativeTime
   };

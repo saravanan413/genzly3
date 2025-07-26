@@ -1,19 +1,31 @@
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Heart, MessageCircle, UserPlus, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useNotifications } from '../hooks/useNotifications';
 import { Badge } from './ui/badge';
 
-const ActivityDropdown = () => {
+interface ActivityDropdownProps {
+  isOpen?: boolean;
+}
+
+const ActivityDropdown: React.FC<ActivityDropdownProps> = ({ isOpen = false }) => {
   const navigate = useNavigate();
   const { 
     notifications, 
     loading, 
     markAsSeen, 
+    markAllAsSeen,
     getNotificationMessage, 
     getRelativeTime 
   } = useNotifications();
+
+  // Mark all notifications as seen when dropdown is opened
+  useEffect(() => {
+    if (isOpen && notifications.some(n => !n.seen)) {
+      markAllAsSeen();
+    }
+  }, [isOpen, notifications, markAllAsSeen]);
 
   const getActivityIcon = (type: string) => {
     switch (type) {
@@ -29,7 +41,7 @@ const ActivityDropdown = () => {
   };
 
   const handleNotificationClick = async (notification: any) => {
-    // Mark as seen
+    // Mark as seen if not already seen
     if (!notification.seen) {
       await markAsSeen(notification.id);
     }
@@ -71,8 +83,8 @@ const ActivityDropdown = () => {
         <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-full flex items-center justify-center">
           <Heart className="text-gray-400" size={24} />
         </div>
-        <p className="text-gray-500 font-medium">No recent activity</p>
-        <p className="text-gray-400 text-sm mt-1">Check back later for updates</p>
+        <h3 className="text-gray-900 font-medium mb-2">No activity yet</h3>
+        <p className="text-gray-400 text-sm">When people like, comment, or follow you, you'll see it here.</p>
       </div>
     );
   }
@@ -82,9 +94,7 @@ const ActivityDropdown = () => {
       {recentNotifications.map((notification) => (
         <div 
           key={notification.id} 
-          className={`flex items-center space-x-4 p-4 bg-card rounded-xl border hover:bg-gray-50 hover:scale-[1.02] transition-all duration-200 cursor-pointer group ${
-            !notification.seen ? 'ring-2 ring-blue-200 bg-blue-50' : ''
-          }`}
+          className="flex items-center space-x-4 p-4 bg-card rounded-xl border hover:bg-gray-50 hover:scale-[1.02] transition-all duration-200 cursor-pointer group"
           onClick={() => handleNotificationClick(notification)}
         >
           <div className="relative">
@@ -120,16 +130,9 @@ const ActivityDropdown = () => {
                 {getNotificationMessage(notification)}
               </span>
             </p>
-            <div className="flex items-center space-x-2 mt-1">
-              <p className="text-xs text-muted-foreground">
-                {getRelativeTime(notification.timestamp)}
-              </p>
-              {!notification.seen && (
-                <Badge variant="destructive" className="text-xs px-1 py-0">
-                  •
-                </Badge>
-              )}
-            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {getRelativeTime(notification.timestamp)}
+            </p>
           </div>
           
           {notification.postThumbnail && (
