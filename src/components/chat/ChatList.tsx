@@ -3,6 +3,7 @@ import React from 'react';
 import { MessageCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import HeartAnimation from '../HeartAnimation';
+import NotificationBadge from './NotificationBadge';
 import { ChatPreview } from '../../services/chat';
 import { FirebaseTimestamp } from '../../types/chat';
 
@@ -123,6 +124,7 @@ const ChatList: React.FC<ChatListProps> = ({
     <div className="space-y-1">
       {filteredChats.map((chat) => {
         const avatarUrl = chat.otherUser.avatar || getFallbackAvatar();
+        const isUnread = !chat.lastMessage?.seen && chat.lastMessage?.senderId !== currentUserId;
         
         return (
           <HeartAnimation 
@@ -130,7 +132,9 @@ const ChatList: React.FC<ChatListProps> = ({
             onDoubleClick={() => onDoubleTap(chat.otherUser.id)}
           >
             <div 
-              className="flex items-center space-x-4 p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-all duration-200 hover:scale-[1.02] group"
+              className={`flex items-center space-x-4 p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer transition-all duration-200 hover:scale-[1.02] group ${
+                isUnread ? 'bg-blue-50 dark:bg-blue-950/20 border-l-4 border-blue-500' : ''
+              }`}
               onClick={() => onChatClick(chat.otherUser.id)}
             >
               <div className="relative">
@@ -145,30 +149,47 @@ const ChatList: React.FC<ChatListProps> = ({
                   />
                 </div>
                 <div className="absolute bottom-0 right-0 w-4 h-4 bg-green-500 rounded-full border-2 border-white dark:border-gray-900"></div>
+                {isUnread && (
+                  <NotificationBadge 
+                    count={0} 
+                    showDot={true} 
+                    size="sm" 
+                    className="animate-pulse"
+                  />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate group-hover:text-primary transition-colors duration-200">
+                  <p className={`text-sm font-semibold truncate group-hover:text-primary transition-colors duration-200 ${
+                    isUnread 
+                      ? 'text-gray-900 dark:text-white' 
+                      : 'text-gray-900 dark:text-white'
+                  }`}>
                     {chat.otherUser.displayName || chat.otherUser.username}
                   </p>
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-gray-500 dark:text-gray-400">
                       {formatTime(chat.lastMessage?.timestamp)}
                     </span>
-                    {!chat.lastMessage?.seen && chat.lastMessage?.senderId !== currentUserId && (
-                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    {isUnread && (
+                      <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center justify-between mt-1">
-                  <div className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                  <div className={`text-sm truncate ${
+                    isUnread 
+                      ? 'text-gray-700 dark:text-gray-300 font-medium' 
+                      : 'text-gray-500 dark:text-gray-400'
+                  }`}>
                     {chat.lastMessage?.senderId === currentUserId && "You: "}
                     {formatLastMessage(chat.lastMessage)}
                   </div>
                   {chat.unreadCount > 0 && (
-                    <div className="bg-primary text-primary-foreground text-xs rounded-full w-5 h-5 flex items-center justify-center ml-2 flex-shrink-0">
-                      {chat.unreadCount}
-                    </div>
+                    <NotificationBadge 
+                      count={chat.unreadCount} 
+                      className="ml-2 flex-shrink-0"
+                    />
                   )}
                 </div>
               </div>

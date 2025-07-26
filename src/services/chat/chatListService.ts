@@ -1,4 +1,3 @@
-
 import { 
   collection, 
   query, 
@@ -156,6 +155,9 @@ export const subscribeToUserChatList = (
           return null;
         }
 
+        // Improved seen logic: message is seen if current user sent it OR if it's marked as seen
+        const isMessageSeen = chatData.lastMessage.senderId === currentUserId || chatData.lastMessage.seen === true;
+
         const chatItem: ChatListItem = {
           chatId,
           receiverId: otherUserId,
@@ -164,7 +166,7 @@ export const subscribeToUserChatList = (
           avatar: userData.avatar,
           lastMessage: chatData.lastMessage.text,
           timestamp: chatData.lastMessage.timestamp?.toDate?.()?.getTime() || chatData.updatedAt?.toDate?.()?.getTime() || Date.now(),
-          seen: chatData.lastMessage.senderId === currentUserId || chatData.lastMessage.seen === true
+          seen: isMessageSeen
         };
 
         return chatItem;

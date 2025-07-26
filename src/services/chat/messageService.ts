@@ -202,6 +202,7 @@ export const markMessagesAsSeen = async (chatId: string, userId: string) => {
         batch.update(chatDocRef, {
           'lastMessage.seen': true
         });
+        logger.debug('Updated chat document seen status', { chatId });
       }
     }
     
