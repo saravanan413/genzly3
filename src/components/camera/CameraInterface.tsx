@@ -56,7 +56,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         )
       };
 
-      // If we can't determine from labels, assume both are available
       if (videoDevices.length > 0 && !cameras.front && !cameras.back) {
         cameras.front = true;
         cameras.back = videoDevices.length > 1;
@@ -64,14 +63,12 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
       setAvailableCameras(cameras);
       
-      // Start with back camera if available, otherwise front
       if (cameras.back) {
         setCameraFacing('environment');
       } else if (cameras.front) {
         setCameraFacing('user');
       }
 
-      // Request initial camera permission
       await requestCameraPermission();
     } catch (error) {
       console.error('Error checking camera availability:', error);
@@ -97,7 +94,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       setPermissionGranted(true);
       
-      // Stop the test stream immediately
       mediaStream.getTracks().forEach(track => track.stop());
       
       return true;
@@ -129,7 +125,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     if (!permissionGranted) return;
 
     try {
-      // Stop existing stream
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
@@ -153,7 +148,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       console.error('Error starting camera:', error);
       
       if (error instanceof DOMException && error.name === 'OverconstrainedError') {
-        // Try with less strict constraints
         try {
           const fallbackConstraints = {
             video: {
@@ -191,7 +185,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const switchCamera = async () => {
     const newFacing = cameraFacing === 'user' ? 'environment' : 'user';
     
-    // Check if the target camera is available
     const targetAvailable = newFacing === 'user' ? availableCameras.front : availableCameras.back;
     
     if (!targetAvailable) {
@@ -218,7 +211,13 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
-    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // For front camera, we need to flip the canvas to get the unmirrored image
+    if (cameraFacing === 'user') {
+      context.scale(-1, 1);
+      context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
+    } else {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
     
     canvas.toBlob((blob) => {
       if (blob) {
@@ -323,7 +322,9 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
           autoPlay
           playsInline
           muted
-          className="w-full h-full object-cover"
+          className={`w-full h-full object-cover ${
+            cameraFacing === 'user' ? 'scale-x-[-1]' : ''
+          }`}
         />
         <canvas ref={canvasRef} className="hidden" />
         
