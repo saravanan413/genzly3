@@ -18,22 +18,125 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('environment');
   const [captureMode, setCaptureMode] = useState<'photo' | 'video'>('photo');
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
+  const [permissionGranted, setPermissionGranted] = useState(false);
+  const [availableCameras, setAvailableCameras] = useState<{ front: boolean; back: boolean }>({
+    front: false,
+    back: false
+  });
   const { toast } = useToast();
 
   useEffect(() => {
-    startCamera();
+    checkCameraAvailability();
+  }, []);
+
+  useEffect(() => {
+    if (permissionGranted) {
+      startCamera();
+    }
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
       }
     };
-  }, [cameraFacing]);
+  }, [cameraFacing, captureMode, permissionGranted]);
 
-  const startCamera = async () => {
+  const checkCameraAvailability = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      
+      const cameras = {
+        front: videoDevices.some(device => 
+          device.label.toLowerCase().includes('front') || 
+          device.label.toLowerCase().includes('user')
+        ),
+        back: videoDevices.some(device => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('environment')
+        )
+      };
+
+      // If we can't determine from labels, assume both are available
+      if (videoDevices.length > 0 && !cameras.front && !cameras.back) {
+        cameras.front = true;
+        cameras.back = videoDevices.length > 1;
+      }
+
+      setAvailableCameras(cameras);
+      
+      // Start with back camera if available, otherwise front
+      if (cameras.back) {
+        setCameraFacing('environment');
+      } else if (cameras.front) {
+        setCameraFacing('user');
+      }
+
+      // Request initial camera permission
+      await requestCameraPermission();
+    } catch (error) {
+      console.error('Error checking camera availability:', error);
+      toast({
+        title: "Camera Error",
+        description: "Unable to check camera availability.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const requestCameraPermission = async () => {
     try {
       const constraints = {
         video: {
-          facingMode: cameraFacing,
+          facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: captureMode === 'video'
+      };
+
+      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
+      setPermissionGranted(true);
+      
+      // Stop the test stream immediately
+      mediaStream.getTracks().forEach(track => track.stop());
+      
+      return true;
+    } catch (error) {
+      console.error('Permission denied or camera not available:', error);
+      setPermissionGranted(false);
+      
+      if (error instanceof DOMException) {
+        if (error.name === 'NotAllowedError') {
+          toast({
+            title: "Camera Permission Required",
+            description: "Camera access is required to switch cameras. Please enable it in settings.",
+            variant: "destructive"
+          });
+        } else if (error.name === 'NotFoundError') {
+          toast({
+            title: "Camera Not Found",
+            description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
+            variant: "destructive"
+          });
+        }
+      }
+      
+      return false;
+    }
+  };
+
+  const startCamera = async () => {
+    if (!permissionGranted) return;
+
+    try {
+      // Stop existing stream
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const constraints = {
+        video: {
+          facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
@@ -47,13 +150,60 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         videoRef.current.srcObject = mediaStream;
       }
     } catch (error) {
-      console.error('Error accessing camera:', error);
+      console.error('Error starting camera:', error);
+      
+      if (error instanceof DOMException && error.name === 'OverconstrainedError') {
+        // Try with less strict constraints
+        try {
+          const fallbackConstraints = {
+            video: {
+              facingMode: cameraFacing,
+              width: { ideal: 1920 },
+              height: { ideal: 1080 }
+            },
+            audio: captureMode === 'video'
+          };
+
+          const fallbackStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+          setStream(fallbackStream);
+          
+          if (videoRef.current) {
+            videoRef.current.srcObject = fallbackStream;
+          }
+        } catch (fallbackError) {
+          console.error('Fallback camera start failed:', fallbackError);
+          toast({
+            title: "Camera Error",
+            description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
+            variant: "destructive"
+          });
+        }
+      } else {
+        toast({
+          title: "Camera Error",
+          description: "Unable to access camera. Please check permissions.",
+          variant: "destructive"
+        });
+      }
+    }
+  };
+
+  const switchCamera = async () => {
+    const newFacing = cameraFacing === 'user' ? 'environment' : 'user';
+    
+    // Check if the target camera is available
+    const targetAvailable = newFacing === 'user' ? availableCameras.front : availableCameras.back;
+    
+    if (!targetAvailable) {
       toast({
-        title: "Camera Error",
-        description: "Unable to access camera. Please check permissions.",
+        title: "Camera Not Available",
+        description: `${newFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
         variant: "destructive"
       });
+      return;
     }
+
+    setCameraFacing(newFacing);
   };
 
   const capturePhoto = () => {
@@ -65,14 +215,11 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     
     if (!context) return;
 
-    // Set canvas size to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
-    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
     
-    // Convert to blob
     canvas.toBlob((blob) => {
       if (blob) {
         const file = new File([blob], 'captured-photo.jpg', { type: 'image/jpeg' });
@@ -145,13 +292,27 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     }
   };
 
-  const switchCamera = () => {
-    setCameraFacing(cameraFacing === 'user' ? 'environment' : 'user');
-  };
-
   const toggleCaptureMode = () => {
     setCaptureMode(captureMode === 'photo' ? 'video' : 'photo');
   };
+
+  if (!permissionGranted) {
+    return (
+      <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
+        <div className="text-center text-white p-6">
+          <Camera size={48} className="mx-auto mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Camera Access Required</h2>
+          <p className="text-gray-300 mb-4">Please allow camera access to continue</p>
+          <Button 
+            onClick={requestCameraPermission}
+            className="bg-blue-500 hover:bg-blue-600"
+          >
+            Enable Camera
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
@@ -248,7 +409,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
               variant="ghost"
               size="icon"
               onClick={switchCamera}
-              className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
+              disabled={!availableCameras.front || !availableCameras.back}
+              className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50 disabled:opacity-50"
             >
               <RotateCcw size={24} />
             </Button>
