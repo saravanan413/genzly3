@@ -1,6 +1,5 @@
-
 import React, { useRef, useState, useEffect } from 'react';
-import { Camera, Gallery, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
+import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -216,7 +215,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
               onClick={onGallerySelect}
               className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
             >
-              <Gallery size={24} />
+              <Images size={24} />
             </Button>
             
             <Button

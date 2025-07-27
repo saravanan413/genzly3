@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -162,7 +161,7 @@ const CreatePost = () => {
       return selectedMedia ? (
         <MediaPreview
           media={selectedMedia}
-          onBack={viewMode === 'gallery' ? handleBackToGallery : handleBackToCamera}
+          onBack={handleBackToCamera}
           onPost={handlePost}
           loading={loading}
         />
