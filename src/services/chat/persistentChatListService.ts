@@ -29,7 +29,12 @@ export interface ChatListData {
 export const updateChatListEntry = async (
   userId: string,
   otherUserId: string,
-  entry: Omit<ChatListEntry, 'uid'>
+  entry: {
+    username: string;
+    displayName: string;
+    avatar?: string;
+    lastMessage: string;
+  }
 ): Promise<void> => {
   try {
     const chatListRef = doc(db, 'chatList', userId, 'conversations', otherUserId);
