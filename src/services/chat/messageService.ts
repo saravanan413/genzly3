@@ -1,3 +1,4 @@
+
 import { 
   collection, 
   addDoc, 
@@ -16,6 +17,10 @@ import {
 import { db } from '../../config/firebase';
 import { ChatMessage } from '../../types/chat';
 import { logger } from '../../utils/logger';
+import { 
+  updateChatListEntry, 
+  getUserDataForChatList 
+} from './persistentChatListService';
 
 interface MessageData {
   text: string;
@@ -114,10 +119,10 @@ export const sendMessage = async (
   }
 
   try {
-    // Use a batch to ensure atomicity - both message and chat document updated together
+    // Use a batch to ensure atomicity
     const batch = writeBatch(db);
     
-    // 1. Create/Update the main chat document in /chats/{chatId}
+    // 1. Create/Update the main chat document
     const chatDocRef = doc(db, 'chats', chatId);
     const chatDoc = await getDoc(chatDocRef);
     
@@ -133,9 +138,7 @@ export const sendMessage = async (
       updatedAt: serverTimestamp()
     };
 
-    // Always update the chat document (create or update)
     batch.set(chatDocRef, chatData, { merge: true });
-    logger.debug('Updating chat document with latest message', { chatId, users: [senderId, receiverId] });
 
     // 2. Add the message to the messages subcollection
     const messagesRef = collection(db, 'chats', chatId, 'messages');
@@ -154,18 +157,61 @@ export const sendMessage = async (
 
     batch.set(messageDocRef, messageData);
     
-    // 3. Commit the batch - this ensures both operations succeed or fail together
+    // 3. Commit the batch
     await batch.commit();
     
-    logger.debug('Message sent and chat document updated successfully', { 
+    // 4. Update chat lists for both users
+    await updateChatListsForMessage(senderId, receiverId, text.trim());
+    
+    logger.debug('Message sent and chat lists updated', { 
       messageId: messageDocRef.id,
       chatId 
     });
     
     return messageDocRef.id;
   } catch (error) {
-    logger.error('Failed to send message and update chat', error);
+    logger.error('Failed to send message', error);
     throw new Error(`Failed to send message: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
+// Helper function to update chat lists for both users
+const updateChatListsForMessage = async (
+  senderId: string,
+  receiverId: string,
+  messageText: string
+): Promise<void> => {
+  try {
+    // Get user data for both users
+    const [senderData, receiverData] = await Promise.all([
+      getUserDataForChatList(senderId),
+      getUserDataForChatList(receiverId)
+    ]);
+
+    if (!senderData || !receiverData) {
+      logger.error('Failed to get user data for chat list update');
+      return;
+    }
+
+    // Update sender's chat list (showing receiver)
+    await updateChatListEntry(senderId, receiverId, {
+      username: receiverData.username,
+      displayName: receiverData.displayName,
+      avatar: receiverData.avatar,
+      lastMessage: messageText
+    });
+
+    // Update receiver's chat list (showing sender)
+    await updateChatListEntry(receiverId, senderId, {
+      username: senderData.username,
+      displayName: senderData.displayName,
+      avatar: senderData.avatar,
+      lastMessage: messageText
+    });
+
+    logger.debug('Chat lists updated for both users', { senderId, receiverId });
+  } catch (error) {
+    logger.error('Error updating chat lists', error);
   }
 };
 
