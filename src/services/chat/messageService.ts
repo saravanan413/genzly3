@@ -1,3 +1,4 @@
+
 import { 
   collection, 
   addDoc, 
@@ -15,6 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../config/firebase';
 import { ChatMessage } from '../../types/chat';
+import { updateChatList } from './persistentChatListService';
 import { logger } from '../../utils/logger';
 
 interface MessageData {
@@ -156,6 +158,24 @@ export const sendMessage = async (
     
     // 3. Commit the batch - this ensures both operations succeed or fail together
     await batch.commit();
+    
+    // 4. Update the persistent chat list for both users
+    try {
+      // Get receiver's data for chat list
+      const receiverDoc = await getDoc(doc(db, 'users', receiverId));
+      const receiverData = receiverDoc.exists() ? receiverDoc.data() : {};
+      
+      await updateChatList(senderId, receiverId, {
+        username: receiverData.username || 'Unknown',
+        displayName: receiverData.displayName || receiverData.username || 'Unknown User',
+        avatar: receiverData.avatar
+      }, text.trim());
+      
+      logger.debug('Chat list updated successfully');
+    } catch (chatListError) {
+      logger.error('Failed to update chat list', chatListError);
+      // Don't throw here - message was sent successfully
+    }
     
     logger.debug('Message sent and chat document updated successfully', { 
       messageId: messageDocRef.id,
