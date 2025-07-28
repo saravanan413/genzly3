@@ -588,17 +588,18 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         )}
       </div>
 
-      {/* Filter Selector */}
-      <FilterSelector
-        activeFilter={activeFilter}
-        onFilterChange={handleFilterChange}
-        disabled={!filterReady || !stream}
-      />
-
-      {/* Controls */}
-      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent">
-        {/* Mode Toggle */}
-        <div className="flex justify-center mb-4">
+      {/* Top Controls */}
+      <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/60 to-transparent">
+        <div className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleFlash}
+            className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
+          >
+            {flashEnabled ? <Zap size={24} /> : <ZapOff size={24} />}
+          </Button>
+          
           <div className="flex bg-black/50 rounded-full p-1">
             <button
               onClick={toggleCaptureMode}
@@ -623,55 +624,50 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
               VIDEO
             </button>
           </div>
-        </div>
 
-        {/* Main Controls */}
-        <div className="flex items-center justify-between">
-          {/* Left controls */}
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={onGallerySelect}
-              className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
-            >
-              <Images size={24} />
-            </Button>
-            
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFlash}
-              className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
-            >
-              {flashEnabled ? <Zap size={24} /> : <ZapOff size={24} />}
-            </Button>
-          </div>
-
-          {/* Center capture button */}
           <Button
-            onClick={handleCapture}
-            className={`w-20 h-20 rounded-full border-4 border-white ${
-              isRecording 
-                ? 'bg-red-500 hover:bg-red-600' 
-                : 'bg-white hover:bg-gray-100'
-            }`}
+            variant="ghost"
+            size="icon"
+            onClick={switchCamera}
+            disabled={!availableCameras.front || !availableCameras.back}
+            className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50 disabled:opacity-50"
           >
-            <div className={`w-8 h-8 rounded-full ${
-              isRecording ? 'bg-white' : 'bg-black'
-            }`} />
+            <RotateCcw size={24} />
           </Button>
+        </div>
+      </div>
 
-          {/* Right controls */}
-          <div className="flex items-center gap-4">
+      {/* Bottom Controls with Integrated Filter Selector */}
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
+        {/* Gallery button positioned separately */}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onGallerySelect}
+          className="absolute bottom-8 left-6 w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
+        >
+          <Images size={24} />
+        </Button>
+
+        {/* Filter Selector with integrated capture button */}
+        <div className="relative">
+          <FilterSelector
+            activeFilter={activeFilter}
+            onFilterChange={handleFilterChange}
+            disabled={!filterReady || !stream}
+          />
+          
+          {/* Capture button overlay */}
+          <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
             <Button
-              variant="ghost"
-              size="icon"
-              onClick={switchCamera}
-              disabled={!availableCameras.front || !availableCameras.back}
-              className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50 disabled:opacity-50"
+              onClick={handleCapture}
+              className={`w-20 h-20 rounded-full border-4 border-white p-0 transition-all duration-200 ${
+                isRecording 
+                  ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                  : 'bg-transparent hover:bg-white/10'
+              }`}
             >
-              <RotateCcw size={24} />
+              {/* This will be rendered by FilterSelector */}
             </Button>
           </div>
         </div>

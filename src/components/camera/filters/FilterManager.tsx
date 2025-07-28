@@ -1,8 +1,6 @@
-
 import React, { useEffect, useRef, useState } from 'react';
 import * as tf from '@tensorflow/tfjs';
 import * as facemesh from '@tensorflow-models/facemesh';
-import { DogFilter } from './DogFilter';
 
 interface FilterManagerProps {
   videoRef: React.RefObject<HTMLVideoElement>;
@@ -89,6 +87,15 @@ export const FilterManager: React.FC<FilterManagerProps> = ({
       case 'dog':
         renderDogFilter(ctx, face, width, height);
         break;
+      case 'cat':
+        renderCatFilter(ctx, face, width, height);
+        break;
+      case 'glasses':
+        renderGlassesFilter(ctx, face, width, height);
+        break;
+      case 'heart':
+        renderHeartFilter(ctx, face, width, height);
+        break;
       default:
         break;
     }
@@ -127,6 +134,131 @@ export const FilterManager: React.FC<FilterManagerProps> = ({
     
     // Draw dog tongue (optional animation)
     drawDogTongue(ctx, noseTip, faceWidth * 0.1);
+  };
+
+  const renderCatFilter = (
+    ctx: CanvasRenderingContext2D,
+    face: any,
+    width: number,
+    height: number
+  ) => {
+    if (!face.scaledMesh) return;
+
+    const keypoints = face.scaledMesh;
+    const noseTip = keypoints[1];
+    const leftEye = keypoints[33];
+    const rightEye = keypoints[263];
+    const forehead = keypoints[9];
+    
+    const eyeDistance = Math.sqrt(
+      Math.pow(rightEye[0] - leftEye[0], 2) + 
+      Math.pow(rightEye[1] - leftEye[1], 2)
+    );
+    
+    const faceWidth = eyeDistance * 2.5;
+
+    // Draw cat ears
+    ctx.fillStyle = '#FFA500';
+    ctx.beginPath();
+    ctx.moveTo(leftEye[0] - faceWidth * 0.3, forehead[1] - faceWidth * 0.4);
+    ctx.lineTo(leftEye[0] - faceWidth * 0.1, forehead[1] - faceWidth * 0.8);
+    ctx.lineTo(leftEye[0] + faceWidth * 0.1, forehead[1] - faceWidth * 0.4);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(rightEye[0] - faceWidth * 0.1, forehead[1] - faceWidth * 0.4);
+    ctx.lineTo(rightEye[0] + faceWidth * 0.1, forehead[1] - faceWidth * 0.8);
+    ctx.lineTo(rightEye[0] + faceWidth * 0.3, forehead[1] - faceWidth * 0.4);
+    ctx.fill();
+
+    // Draw cat nose
+    ctx.fillStyle = '#FF69B4';
+    ctx.beginPath();
+    ctx.moveTo(noseTip[0], noseTip[1] - faceWidth * 0.05);
+    ctx.lineTo(noseTip[0] - faceWidth * 0.04, noseTip[1] + faceWidth * 0.02);
+    ctx.lineTo(noseTip[0] + faceWidth * 0.04, noseTip[1] + faceWidth * 0.02);
+    ctx.fill();
+  };
+
+  const renderGlassesFilter = (
+    ctx: CanvasRenderingContext2D,
+    face: any,
+    width: number,
+    height: number
+  ) => {
+    if (!face.scaledMesh) return;
+
+    const keypoints = face.scaledMesh;
+    const leftEye = keypoints[33];
+    const rightEye = keypoints[263];
+    const noseBridge = keypoints[168];
+    
+    const eyeDistance = Math.sqrt(
+      Math.pow(rightEye[0] - leftEye[0], 2) + 
+      Math.pow(rightEye[1] - leftEye[1], 2)
+    );
+    
+    const lensRadius = eyeDistance * 0.25;
+
+    // Draw frames
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 4;
+
+    // Left lens
+    ctx.beginPath();
+    ctx.arc(leftEye[0], leftEye[1], lensRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Right lens
+    ctx.beginPath();
+    ctx.arc(rightEye[0], rightEye[1], lensRadius, 0, 2 * Math.PI);
+    ctx.stroke();
+
+    // Bridge
+    ctx.beginPath();
+    ctx.moveTo(leftEye[0] + lensRadius * 0.7, leftEye[1]);
+    ctx.lineTo(rightEye[0] - lensRadius * 0.7, rightEye[1]);
+    ctx.stroke();
+
+    // Add lens tint
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
+    ctx.beginPath();
+    ctx.arc(leftEye[0], leftEye[1], lensRadius - 2, 0, 2 * Math.PI);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(rightEye[0], rightEye[1], lensRadius - 2, 0, 2 * Math.PI);
+    ctx.fill();
+  };
+
+  const renderHeartFilter = (
+    ctx: CanvasRenderingContext2D,
+    face: any,
+    width: number,
+    height: number
+  ) => {
+    if (!face.scaledMesh) return;
+
+    const keypoints = face.scaledMesh;
+    const leftEye = keypoints[33];
+    const rightEye = keypoints[263];
+    
+    const eyeDistance = Math.sqrt(
+      Math.pow(rightEye[0] - leftEye[0], 2) + 
+      Math.pow(rightEye[1] - leftEye[1], 2)
+    );
+    
+    const heartSize = eyeDistance * 0.15;
+
+    // Draw heart eyes
+    [leftEye, rightEye].forEach(eye => {
+      ctx.fillStyle = '#FF69B4';
+      ctx.beginPath();
+      ctx.arc(eye[0] - heartSize * 0.3, eye[1] - heartSize * 0.2, heartSize * 0.5, 0, Math.PI, false);
+      ctx.arc(eye[0] + heartSize * 0.3, eye[1] - heartSize * 0.2, heartSize * 0.5, 0, Math.PI, false);
+      ctx.lineTo(eye[0], eye[1] + heartSize * 0.8);
+      ctx.fill();
+    });
   };
 
   const drawDogEars = (
