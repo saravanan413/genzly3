@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, Send, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 
@@ -8,10 +8,17 @@ interface MediaPreviewProps {
   media: { type: 'image' | 'video', data: string, file: File };
   onBack: () => void;
   onPost: (caption: string) => void;
+  onShareToFollowers: () => void;
   loading?: boolean;
 }
 
-const MediaPreview: React.FC<MediaPreviewProps> = ({ media, onBack, onPost, loading = false }) => {
+const MediaPreview: React.FC<MediaPreviewProps> = ({ 
+  media, 
+  onBack, 
+  onPost, 
+  onShareToFollowers,
+  loading = false 
+}) => {
   const [caption, setCaption] = useState('');
 
   const handleSubmit = () => {
@@ -25,7 +32,7 @@ const MediaPreview: React.FC<MediaPreviewProps> = ({ media, onBack, onPost, load
         <Button variant="ghost" size="icon" onClick={onBack}>
           <ArrowLeft size={24} />
         </Button>
-        <h1 className="text-lg font-semibold">Add a caption</h1>
+        <h1 className="text-lg font-semibold">Share</h1>
         <div className="w-10" />
       </div>
 
@@ -65,6 +72,19 @@ const MediaPreview: React.FC<MediaPreviewProps> = ({ media, onBack, onPost, load
 
           {/* Action Buttons */}
           <div className="space-y-3">
+            {/* Share to Followers Button */}
+            <Button
+              onClick={onShareToFollowers}
+              disabled={loading}
+              className="w-full"
+              size="lg"
+              variant="outline"
+            >
+              <Users size={18} className="mr-2" />
+              Share to followers
+            </Button>
+            
+            {/* Regular Post/Reel Button */}
             {media.type === 'image' && (
               <Button
                 onClick={handleSubmit}

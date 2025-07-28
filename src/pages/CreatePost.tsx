@@ -2,13 +2,15 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { uploadPostMedia, createPost } from '../services/mediaService';
+import { shareMediaToChats } from '../services/chat/shareService';
 import { useToast } from '@/hooks/use-toast';
 import { logger } from '../utils/logger';
 import CameraInterface from '../components/camera/CameraInterface';
 import MediaPreview from '../components/camera/MediaPreview';
+import ShareToFollowers from '../components/camera/ShareToFollowers';
 import GalleryPicker from '../components/camera/GalleryPicker';
 
-type ViewMode = 'camera' | 'gallery' | 'preview';
+type ViewMode = 'camera' | 'gallery' | 'preview' | 'share';
 
 const CreatePost = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('camera');
@@ -37,8 +39,44 @@ const CreatePost = () => {
     setSelectedMedia(null);
   };
 
-  const handleBackToGallery = () => {
-    setViewMode('gallery');
+  const handleShareToFollowers = () => {
+    setViewMode('share');
+  };
+
+  const handleBackToPreview = () => {
+    setViewMode('preview');
+  };
+
+  const handleShareToUsers = async (selectedUsers: string[], caption: string) => {
+    if (!selectedMedia || !currentUser) return;
+    
+    setLoading(true);
+    
+    try {
+      await shareMediaToChats(
+        currentUser.uid,
+        selectedUsers,
+        selectedMedia,
+        caption
+      );
+      
+      toast({
+        title: "Success!",
+        description: `${selectedMedia.type === 'image' ? 'Photo' : 'Video'} shared with ${selectedUsers.length} ${selectedUsers.length === 1 ? 'person' : 'people'}!`
+      });
+      
+      // Navigate back to home
+      navigate('/');
+    } catch (error) {
+      logger.error('Error sharing media:', error);
+      toast({
+        title: "Error",
+        description: "Failed to share media. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   const compressImage = async (file: File): Promise<File> => {
@@ -163,6 +201,17 @@ const CreatePost = () => {
           media={selectedMedia}
           onBack={handleBackToCamera}
           onPost={handlePost}
+          onShareToFollowers={handleShareToFollowers}
+          loading={loading}
+        />
+      ) : null;
+    
+    case 'share':
+      return selectedMedia ? (
+        <ShareToFollowers
+          media={selectedMedia}
+          onBack={handleBackToPreview}
+          onShare={handleShareToUsers}
           loading={loading}
         />
       ) : null;
