@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -11,6 +11,7 @@ interface CameraInterfaceProps {
 const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGallerySelect }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
@@ -23,6 +24,15 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     front: false,
     back: false
   });
+
+  // New state for focus and zoom
+  const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [showZoomIndicator, setShowZoomIndicator] = useState(false);
+  const [maxZoom, setMaxZoom] = useState(3);
+  const [lastTouchDistance, setLastTouchDistance] = useState(0);
+  const [isZooming, setIsZooming] = useState(false);
+
   const { toast } = useToast();
 
   useEffect(() => {
@@ -133,7 +143,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         video: {
           facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
           width: { ideal: 1920 },
-          height: { ideal: 1080 }
+          height: { ideal: 1080 },
+          focusMode: 'continuous'
         },
         audio: captureMode === 'video'
       };
@@ -144,6 +155,19 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       if (videoRef.current) {
         videoRef.current.srcObject = mediaStream;
       }
+
+      // Get zoom capabilities
+      const videoTrack = mediaStream.getVideoTracks()[0];
+      if (videoTrack) {
+        const capabilities = videoTrack.getCapabilities();
+        if (capabilities.zoom) {
+          setMaxZoom(capabilities.zoom.max || 3);
+        }
+      }
+
+      // Reset zoom when switching cameras
+      setZoomLevel(1);
+      
     } catch (error) {
       console.error('Error starting camera:', error);
       
@@ -199,8 +223,119 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     setCameraFacing(newFacing);
   };
 
-  const capturePhoto = () => {
+  // Tap to focus functionality
+  const handleTapToFocus = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!stream || isZooming) return;
+
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+
+    setFocusPoint({ x, y });
+
+    // Try to apply focus constraints
+    const videoTrack = stream.getVideoTracks()[0];
+    if (videoTrack && videoTrack.applyConstraints) {
+      try {
+        await videoTrack.applyConstraints({
+          focusMode: 'manual',
+          pointsOfInterest: [{ x: x / 100, y: y / 100 }]
+        });
+      } catch (error) {
+        // Fallback to continuous focus if manual focus fails
+        try {
+          await videoTrack.applyConstraints({
+            focusMode: 'continuous'
+          });
+        } catch (fallbackError) {
+          console.log('Focus not supported on this device');
+        }
+      }
+    }
+
+    // Hide focus indicator after 2 seconds
+    setTimeout(() => {
+      setFocusPoint(null);
+    }, 2000);
+  }, [stream, isZooming]);
+
+  // Touch events for pinch to zoom
+  const getTouchDistance = (touches: TouchList) => {
+    if (touches.length < 2) return 0;
+    const touch1 = touches[0];
+    const touch2 = touches[1];
+    return Math.sqrt(
+      Math.pow(touch2.clientX - touch1.clientX, 2) +
+      Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+  };
+
+  const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length === 2) {
+      setIsZooming(true);
+      setLastTouchDistance(getTouchDistance(event.touches));
+      setShowZoomIndicator(true);
+    }
+  }, []);
+
+  const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
+    if (event.touches.length === 2 && isZooming) {
+      event.preventDefault();
+      const currentDistance = getTouchDistance(event.touches);
+      
+      if (lastTouchDistance > 0) {
+        const scale = currentDistance / lastTouchDistance;
+        const newZoom = Math.min(Math.max(zoomLevel * scale, 1), maxZoom);
+        setZoomLevel(newZoom);
+        
+        // Apply zoom to video track
+        if (stream) {
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack && videoTrack.applyConstraints) {
+            try {
+              videoTrack.applyConstraints({
+                zoom: newZoom
+              });
+            } catch (error) {
+              // Fallback to CSS zoom if native zoom fails
+              if (videoRef.current) {
+                videoRef.current.style.transform = `scale(${newZoom}) ${cameraFacing === 'user' ? 'scaleX(-1)' : ''}`;
+              }
+            }
+          }
+        }
+      }
+      
+      setLastTouchDistance(currentDistance);
+    }
+  }, [isZooming, lastTouchDistance, zoomLevel, maxZoom, stream, cameraFacing]);
+
+  const handleTouchEnd = useCallback(() => {
+    setIsZooming(false);
+    setLastTouchDistance(0);
+    setTimeout(() => setShowZoomIndicator(false), 1000);
+  }, []);
+
+  const capturePhoto = async () => {
     if (!videoRef.current || !canvasRef.current) return;
+
+    // Apply autofocus before capturing
+    if (stream && captureMode === 'photo') {
+      const videoTrack = stream.getVideoTracks()[0];
+      if (videoTrack && videoTrack.applyConstraints) {
+        try {
+          await videoTrack.applyConstraints({
+            focusMode: 'single-shot'
+          });
+          // Wait a bit for focus to settle
+          await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+          console.log('Autofocus not supported, proceeding with capture');
+        }
+      }
+    }
 
     const canvas = canvasRef.current;
     const video = videoRef.current;
@@ -316,7 +451,14 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   return (
     <div className="fixed inset-0 bg-black z-50 flex flex-col">
       {/* Camera Preview */}
-      <div className="flex-1 relative overflow-hidden">
+      <div 
+        ref={containerRef}
+        className="flex-1 relative overflow-hidden"
+        onClick={handleTapToFocus}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
         <video
           ref={videoRef}
           autoPlay
@@ -327,6 +469,28 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
           }`}
         />
         <canvas ref={canvasRef} className="hidden" />
+        
+        {/* Focus indicator */}
+        {focusPoint && (
+          <div 
+            className="absolute pointer-events-none"
+            style={{
+              left: `${focusPoint.x}%`,
+              top: `${focusPoint.y}%`,
+              transform: 'translate(-50%, -50%)'
+            }}
+          >
+            <div className="w-16 h-16 border-2 border-white rounded-full animate-ping" />
+            <div className="absolute inset-0 w-16 h-16 border-2 border-white rounded-full" />
+          </div>
+        )}
+        
+        {/* Zoom indicator */}
+        {showZoomIndicator && (
+          <div className="absolute top-4 right-4 bg-black/50 text-white px-3 py-1 rounded-full text-sm">
+            {Math.round(zoomLevel * 100)}%
+          </div>
+        )}
         
         {/* Recording indicator */}
         {isRecording && (
