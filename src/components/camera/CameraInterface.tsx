@@ -1,8 +1,9 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
+import { FilterManager } from './filters/FilterManager';
+import { FilterSelector } from './filters/FilterSelector';
 
 interface CameraInterfaceProps {
   onMediaCaptured: (media: { type: 'image' | 'video', data: string, file: File }) => void;
@@ -33,7 +34,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [flashEnabled, setFlashEnabled] = useState(false);
-  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('environment');
+  const [cameraFacing, setCameraFacing] = useState<'user' | 'environment'>('user');
   const [captureMode, setCaptureMode] = useState<'photo' | 'video'>('photo');
   const [recordedChunks, setRecordedChunks] = useState<Blob[]>([]);
   const [permissionGranted, setPermissionGranted] = useState(false);
@@ -41,6 +42,10 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     front: false,
     back: false
   });
+
+  // New filter-related state
+  const [activeFilter, setActiveFilter] = useState('normal');
+  const [filterReady, setFilterReady] = useState(false);
 
   // New state for focus and zoom
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
@@ -375,7 +380,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
           await videoTrack.applyConstraints({
             advanced: [{ focusMode: 'single-shot' } as any]
           });
-          // Wait a bit for focus to settle
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (error) {
           console.log('Autofocus not supported, proceeding with capture');
@@ -392,12 +396,25 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
     
-    // For front camera, we need to flip the canvas to get the unmirrored image
+    // Draw the video frame
     if (cameraFacing === 'user') {
       context.scale(-1, 1);
       context.drawImage(video, -canvas.width, 0, canvas.width, canvas.height);
     } else {
       context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    }
+
+    // If there's an active filter, we need to capture the filter canvas too
+    if (activeFilter !== 'normal') {
+      const filterCanvas = document.querySelector('.absolute.inset-0.w-full.h-full.object-cover.pointer-events-none.z-10') as HTMLCanvasElement;
+      if (filterCanvas) {
+        if (cameraFacing === 'user') {
+          context.scale(-1, 1);
+          context.drawImage(filterCanvas, -canvas.width, 0, canvas.width, canvas.height);
+        } else {
+          context.drawImage(filterCanvas, 0, 0, canvas.width, canvas.height);
+        }
+      }
     }
     
     canvas.toBlob((blob) => {
@@ -476,6 +493,14 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     setCaptureMode(captureMode === 'photo' ? 'video' : 'photo');
   };
 
+  const handleFilterChange = (filterId: string) => {
+    setActiveFilter(filterId);
+  };
+
+  const handleFilterReady = (isReady: boolean) => {
+    setFilterReady(isReady);
+  };
+
   if (!permissionGranted) {
     return (
       <div className="fixed inset-0 bg-black z-50 flex items-center justify-center">
@@ -520,6 +545,16 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
             cameraFacing === 'user' ? 'scale-x-[-1]' : ''
           }`}
         />
+        
+        {/* Filter Overlay */}
+        {stream && (
+          <FilterManager
+            videoRef={videoRef}
+            activeFilter={activeFilter}
+            onFilterReady={handleFilterReady}
+          />
+        )}
+        
         <canvas ref={canvasRef} className="hidden" />
         
         {/* Focus indicator */}
@@ -552,6 +587,13 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
           </div>
         )}
       </div>
+
+      {/* Filter Selector */}
+      <FilterSelector
+        activeFilter={activeFilter}
+        onFilterChange={handleFilterChange}
+        disabled={!filterReady || !stream}
+      />
 
       {/* Controls */}
       <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/80 to-transparent">
