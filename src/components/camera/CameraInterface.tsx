@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,6 +7,22 @@ import { useToast } from '@/hooks/use-toast';
 interface CameraInterfaceProps {
   onMediaCaptured: (media: { type: 'image' | 'video', data: string, file: File }) => void;
   onGallerySelect: () => void;
+}
+
+// Extended types for experimental camera APIs
+interface ExtendedMediaTrackCapabilities extends MediaTrackCapabilities {
+  zoom?: {
+    min: number;
+    max: number;
+    step: number;
+  };
+  focusMode?: string[];
+}
+
+interface ExtendedMediaTrackConstraints extends MediaTrackConstraints {
+  zoom?: number;
+  focusMode?: string;
+  pointsOfInterest?: Array<{ x: number; y: number }>;
 }
 
 const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGallerySelect }) => {
@@ -143,8 +160,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         video: {
           facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
           width: { ideal: 1920 },
-          height: { ideal: 1080 },
-          focusMode: 'continuous'
+          height: { ideal: 1080 }
         },
         audio: captureMode === 'video'
       };
@@ -156,10 +172,10 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         videoRef.current.srcObject = mediaStream;
       }
 
-      // Get zoom capabilities
+      // Get zoom capabilities with type assertion
       const videoTrack = mediaStream.getVideoTracks()[0];
       if (videoTrack) {
-        const capabilities = videoTrack.getCapabilities();
+        const capabilities = videoTrack.getCapabilities() as ExtendedMediaTrackCapabilities;
         if (capabilities.zoom) {
           setMaxZoom(capabilities.zoom.max || 3);
         }
@@ -235,19 +251,18 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
     setFocusPoint({ x, y });
 
-    // Try to apply focus constraints
+    // Try to apply focus constraints with type assertion
     const videoTrack = stream.getVideoTracks()[0];
     if (videoTrack && videoTrack.applyConstraints) {
       try {
         await videoTrack.applyConstraints({
-          focusMode: 'manual',
-          pointsOfInterest: [{ x: x / 100, y: y / 100 }]
+          advanced: [{ focusMode: 'manual', pointsOfInterest: [{ x: x / 100, y: y / 100 }] } as any]
         });
       } catch (error) {
         // Fallback to continuous focus if manual focus fails
         try {
           await videoTrack.applyConstraints({
-            focusMode: 'continuous'
+            advanced: [{ focusMode: 'continuous' } as any]
           });
         } catch (fallbackError) {
           console.log('Focus not supported on this device');
@@ -262,7 +277,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   }, [stream, isZooming]);
 
   // Touch events for pinch to zoom
-  const getTouchDistance = (touches: TouchList) => {
+  const getTouchDistance = (touches: Touch[]) => {
     if (touches.length < 2) return 0;
     const touch1 = touches[0];
     const touch2 = touches[1];
@@ -275,7 +290,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     if (event.touches.length === 2) {
       setIsZooming(true);
-      setLastTouchDistance(getTouchDistance(event.touches));
+      const touchArray = Array.from(event.touches);
+      setLastTouchDistance(getTouchDistance(touchArray));
       setShowZoomIndicator(true);
     }
   }, []);
@@ -283,20 +299,21 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     if (event.touches.length === 2 && isZooming) {
       event.preventDefault();
-      const currentDistance = getTouchDistance(event.touches);
+      const touchArray = Array.from(event.touches);
+      const currentDistance = getTouchDistance(touchArray);
       
       if (lastTouchDistance > 0) {
         const scale = currentDistance / lastTouchDistance;
         const newZoom = Math.min(Math.max(zoomLevel * scale, 1), maxZoom);
         setZoomLevel(newZoom);
         
-        // Apply zoom to video track
+        // Apply zoom to video track with type assertion
         if (stream) {
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack && videoTrack.applyConstraints) {
             try {
               videoTrack.applyConstraints({
-                zoom: newZoom
+                advanced: [{ zoom: newZoom } as any]
               });
             } catch (error) {
               // Fallback to CSS zoom if native zoom fails
@@ -327,7 +344,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       if (videoTrack && videoTrack.applyConstraints) {
         try {
           await videoTrack.applyConstraints({
-            focusMode: 'single-shot'
+            advanced: [{ focusMode: 'single-shot' } as any]
           });
           // Wait a bit for focus to settle
           await new Promise(resolve => setTimeout(resolve, 500));
