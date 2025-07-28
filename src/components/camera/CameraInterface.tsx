@@ -1,3 +1,4 @@
+
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,16 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const { toast } = useToast();
 
   useEffect(() => {
+    // Check if we're on HTTPS or localhost
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') {
+      toast({
+        title: "HTTPS Required",
+        description: "Camera access requires HTTPS. Please use a secure connection.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     checkCameraAvailability();
   }, []);
 
@@ -68,6 +79,11 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
   const checkCameraAvailability = async () => {
     try {
+      // Check if mediaDevices is available
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported');
+      }
+
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
       
@@ -82,6 +98,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         )
       };
 
+      // If we can't determine from labels, assume we have at least one camera
       if (videoDevices.length > 0 && !cameras.front && !cameras.back) {
         cameras.front = true;
         cameras.back = videoDevices.length > 1;
@@ -89,6 +106,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
       setAvailableCameras(cameras);
       
+      // Prefer back camera if available
       if (cameras.back) {
         setCameraFacing('environment');
       } else if (cameras.front) {
@@ -100,7 +118,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       console.error('Error checking camera availability:', error);
       toast({
         title: "Camera Error",
-        description: "Unable to check camera availability.",
+        description: "Unable to access camera. Please check permissions and ensure you're using HTTPS.",
         variant: "destructive"
       });
     }
@@ -108,9 +126,10 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
   const requestCameraPermission = async () => {
     try {
+      // Use more compatible constraints without "exact"
       const constraints = {
         video: {
-          facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
+          facingMode: cameraFacing === 'user' ? 'user' : 'environment',
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
@@ -120,6 +139,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
       setPermissionGranted(true);
       
+      // Stop the test stream
       mediaStream.getTracks().forEach(track => track.stop());
       
       return true;
@@ -131,12 +151,18 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         if (error.name === 'NotAllowedError') {
           toast({
             title: "Camera Permission Required",
-            description: "Camera access is required to switch cameras. Please enable it in settings.",
+            description: "Please allow camera access to use this feature.",
             variant: "destructive"
           });
         } else if (error.name === 'NotFoundError') {
           toast({
             title: "Camera Not Found",
+            description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
+            variant: "destructive"
+          });
+        } else if (error.name === 'OverconstrainedError') {
+          toast({
+            title: "Camera Constraint Error",
             description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
             variant: "destructive"
           });
@@ -155,9 +181,10 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         stream.getTracks().forEach(track => track.stop());
       }
 
+      // Use more compatible constraints
       const constraints = {
         video: {
-          facingMode: cameraFacing === 'user' ? 'user' : { exact: 'environment' },
+          facingMode: cameraFacing === 'user' ? 'user' : 'environment',
           width: { ideal: 1920 },
           height: { ideal: 1080 }
         },
@@ -186,37 +213,42 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     } catch (error) {
       console.error('Error starting camera:', error);
       
-      if (error instanceof DOMException && error.name === 'OverconstrainedError') {
-        try {
-          const fallbackConstraints = {
-            video: {
-              facingMode: cameraFacing,
-              width: { ideal: 1920 },
-              height: { ideal: 1080 }
-            },
-            audio: captureMode === 'video'
-          };
+      if (error instanceof DOMException) {
+        if (error.name === 'OverconstrainedError' || error.name === 'NotFoundError') {
+          // Try with basic constraints as fallback
+          try {
+            const fallbackConstraints = {
+              video: true,
+              audio: captureMode === 'video'
+            };
 
-          const fallbackStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
-          setStream(fallbackStream);
-          
-          if (videoRef.current) {
-            videoRef.current.srcObject = fallbackStream;
+            const fallbackStream = await navigator.mediaDevices.getUserMedia(fallbackConstraints);
+            setStream(fallbackStream);
+            
+            if (videoRef.current) {
+              videoRef.current.srcObject = fallbackStream;
+            }
+
+            toast({
+              title: "Camera Fallback",
+              description: "Using available camera. Camera switching may be limited.",
+              variant: "default"
+            });
+          } catch (fallbackError) {
+            console.error('Fallback camera start failed:', fallbackError);
+            toast({
+              title: "Camera Error",
+              description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
+              variant: "destructive"
+            });
           }
-        } catch (fallbackError) {
-          console.error('Fallback camera start failed:', fallbackError);
+        } else {
           toast({
             title: "Camera Error",
-            description: `${cameraFacing === 'user' ? 'Front' : 'Back'} camera not available on this device.`,
+            description: "Unable to access camera. Please check permissions.",
             variant: "destructive"
           });
         }
-      } else {
-        toast({
-          title: "Camera Error",
-          description: "Unable to access camera. Please check permissions.",
-          variant: "destructive"
-        });
       }
     }
   };
@@ -450,10 +482,16 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         <div className="text-center text-white p-6">
           <Camera size={48} className="mx-auto mb-4" />
           <h2 className="text-xl font-semibold mb-2">Camera Access Required</h2>
-          <p className="text-gray-300 mb-4">Please allow camera access to continue</p>
+          <p className="text-gray-300 mb-4">
+            {location.protocol !== 'https:' && location.hostname !== 'localhost'
+              ? 'Camera access requires HTTPS. Please use a secure connection.'
+              : 'Please allow camera access to continue'
+            }
+          </p>
           <Button 
             onClick={requestCameraPermission}
             className="bg-blue-500 hover:bg-blue-600"
+            disabled={location.protocol !== 'https:' && location.hostname !== 'localhost'}
           >
             Enable Camera
           </Button>
