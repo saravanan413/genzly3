@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -277,7 +276,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   }, [stream, isZooming]);
 
   // Touch events for pinch to zoom
-  const getTouchDistance = (touches: Touch[]) => {
+  const getTouchDistance = (touches: React.TouchList) => {
     if (touches.length < 2) return 0;
     const touch1 = touches[0];
     const touch2 = touches[1];
@@ -290,8 +289,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const handleTouchStart = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     if (event.touches.length === 2) {
       setIsZooming(true);
-      const touchArray = Array.from(event.touches);
-      setLastTouchDistance(getTouchDistance(touchArray));
+      setLastTouchDistance(getTouchDistance(event.touches));
       setShowZoomIndicator(true);
     }
   }, []);
@@ -299,8 +297,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
   const handleTouchMove = useCallback((event: React.TouchEvent<HTMLDivElement>) => {
     if (event.touches.length === 2 && isZooming) {
       event.preventDefault();
-      const touchArray = Array.from(event.touches);
-      const currentDistance = getTouchDistance(touchArray);
+      const currentDistance = getTouchDistance(event.touches);
       
       if (lastTouchDistance > 0) {
         const scale = currentDistance / lastTouchDistance;
