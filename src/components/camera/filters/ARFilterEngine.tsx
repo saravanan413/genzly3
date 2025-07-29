@@ -92,7 +92,8 @@ export const ARFilterEngine: React.FC<ARFilterEngineProps> = ({
         canvas.height = video.videoHeight;
 
         try {
-          const predictions = await model.estimateFaces({ input: video });
+          // Fix: Pass video element directly, not as object with input property
+          const predictions = await model.estimateFaces(video);
           
           // Clear canvas
           ctx.clearRect(0, 0, canvas.width, canvas.height);
