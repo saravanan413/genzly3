@@ -43,11 +43,14 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     back: false
   });
 
-  // New filter-related state
-  const [activeFilter, setActiveFilter] = useState('normal');
+  // Filter-related state
+  const [activeFilter, setActiveFilter] = useState(() => {
+    // Load last used filter from localStorage
+    return localStorage.getItem('lastUsedFilter') || 'normal';
+  });
   const [filterReady, setFilterReady] = useState(false);
 
-  // New state for focus and zoom
+  // Focus and zoom state
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
   const [showZoomIndicator, setShowZoomIndicator] = useState(false);
@@ -275,7 +278,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     setCameraFacing(newFacing);
   };
 
-  // Tap to focus functionality
   const handleTapToFocus = useCallback(async (event: React.MouseEvent<HTMLDivElement>) => {
     if (!stream || isZooming) return;
 
@@ -312,7 +314,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     }, 2000);
   }, [stream, isZooming]);
 
-  // Touch events for pinch to zoom
   const getTouchDistance = (touches: React.TouchList) => {
     if (touches.length < 2) return 0;
     const touch1 = touches[0];
@@ -495,6 +496,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
   const handleFilterChange = (filterId: string) => {
     setActiveFilter(filterId);
+    // Save to localStorage for persistence
+    localStorage.setItem('lastUsedFilter', filterId);
   };
 
   const handleFilterReady = (isReady: boolean) => {
@@ -637,39 +640,60 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
         </div>
       </div>
 
-      {/* Bottom Controls with Integrated Filter Selector */}
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/60 to-transparent">
-        {/* Gallery button positioned separately */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={onGallerySelect}
-          className="absolute bottom-8 left-6 w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
-        >
-          <Images size={24} />
-        </Button>
+      {/* Filter Selector */}
+      <FilterSelector
+        activeFilter={activeFilter}
+        onFilterChange={handleFilterChange}
+        disabled={!filterReady || !stream}
+      />
 
-        {/* Filter Selector with integrated capture button */}
-        <div className="relative">
-          <FilterSelector
-            activeFilter={activeFilter}
-            onFilterChange={handleFilterChange}
-            disabled={!filterReady || !stream}
-          />
-          
-          {/* Capture button overlay */}
-          <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2">
-            <Button
-              onClick={handleCapture}
-              className={`w-20 h-20 rounded-full border-4 border-white p-0 transition-all duration-200 ${
-                isRecording 
-                  ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
-                  : 'bg-transparent hover:bg-white/10'
-              }`}
-            >
-              {/* This will be rendered by FilterSelector */}
-            </Button>
-          </div>
+      {/* Bottom Controls */}
+      <div className="absolute bottom-0 left-0 right-0 p-6 bg-gradient-to-t from-black/60 to-transparent">
+        <div className="flex items-center justify-between">
+          {/* Gallery button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onGallerySelect}
+            className="w-12 h-12 rounded-full bg-black/30 text-white hover:bg-black/50"
+          >
+            <Images size={24} />
+          </Button>
+
+          {/* Main capture button */}
+          <Button
+            onClick={handleCapture}
+            className={`w-20 h-20 rounded-full border-4 border-white p-0 transition-all duration-200 relative ${
+              isRecording 
+                ? 'bg-red-500 hover:bg-red-600 animate-pulse' 
+                : 'bg-transparent hover:bg-white/10'
+            }`}
+          >
+            {/* Show active filter preview inside button */}
+            {activeFilter !== 'normal' && (
+              <div className="absolute inset-2 rounded-full bg-white/20 flex items-center justify-center">
+                <span className="text-lg">
+                  {activeFilter === 'dog' && '🐶'}
+                  {activeFilter === 'cat' && '🐱'}
+                  {activeFilter === 'glasses' && '🤓'}
+                  {activeFilter === 'heart' && '😍'}
+                  {activeFilter === 'sparkles' && '✨'}
+                  {activeFilter === 'rainbow' && '🌈'}
+                </span>
+              </div>
+            )}
+            <div className={`w-12 h-12 rounded-full transition-all duration-200 ${
+              activeFilter !== 'normal' ? 'bg-white/60' : 'bg-white'
+            }`} />
+            
+            {/* Filter indicator ring */}
+            {activeFilter !== 'normal' && (
+              <div className="absolute inset-0 rounded-full border-2 border-blue-400 animate-pulse" />
+            )}
+          </Button>
+
+          {/* Empty space for symmetry */}
+          <div className="w-12 h-12"></div>
         </div>
       </div>
     </div>
