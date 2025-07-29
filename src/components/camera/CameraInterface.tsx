@@ -2,8 +2,8 @@ import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { Camera, Images, Zap, ZapOff, RotateCcw, Video, Image } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { FilterManager } from './filters/FilterManager';
-import { FilterSelector } from './filters/FilterSelector';
+import { ARFilterEngine } from './filters/ARFilterEngine';
+import { EnhancedFilterSelector } from './filters/EnhancedFilterSelector';
 
 interface CameraInterfaceProps {
   onMediaCaptured: (media: { type: 'image' | 'video', data: string, file: File }) => void;
@@ -48,7 +48,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     // Load last used filter from localStorage
     return localStorage.getItem('lastUsedFilter') || 'normal';
   });
-  const [filterReady, setFilterReady] = useState(false);
+  const [arFilterReady, setARFilterReady] = useState(false);
 
   // Focus and zoom state
   const [focusPoint, setFocusPoint] = useState<{ x: number; y: number } | null>(null);
@@ -407,7 +407,7 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
 
     // If there's an active filter, we need to capture the filter canvas too
     if (activeFilter !== 'normal') {
-      const filterCanvas = document.querySelector('.absolute.inset-0.w-full.h-full.object-cover.pointer-events-none.z-10') as HTMLCanvasElement;
+      const filterCanvas = document.querySelector('canvas[class*="absolute inset-0"]') as HTMLCanvasElement;
       if (filterCanvas) {
         if (cameraFacing === 'user') {
           context.scale(-1, 1);
@@ -500,8 +500,8 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
     localStorage.setItem('lastUsedFilter', filterId);
   };
 
-  const handleFilterReady = (isReady: boolean) => {
-    setFilterReady(isReady);
+  const handleARFilterReady = (isReady: boolean) => {
+    setARFilterReady(isReady);
   };
 
   if (!permissionGranted) {
@@ -549,12 +549,12 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
           }`}
         />
         
-        {/* Filter Overlay */}
+        {/* AR Filter Overlay */}
         {stream && (
-          <FilterManager
+          <ARFilterEngine
             videoRef={videoRef}
             activeFilter={activeFilter}
-            onFilterReady={handleFilterReady}
+            onModelReady={handleARFilterReady}
           />
         )}
         
@@ -641,10 +641,10 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
       </div>
 
       {/* Filter Selector */}
-      <FilterSelector
+      <EnhancedFilterSelector
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
-        disabled={!filterReady || !stream}
+        disabled={!arFilterReady || !stream}
       />
 
       {/* Bottom Controls */}
@@ -674,11 +674,6 @@ const CameraInterface: React.FC<CameraInterfaceProps> = ({ onMediaCaptured, onGa
               <div className="absolute inset-2 rounded-full bg-white/20 flex items-center justify-center">
                 <span className="text-lg">
                   {activeFilter === 'dog' && '🐶'}
-                  {activeFilter === 'cat' && '🐱'}
-                  {activeFilter === 'glasses' && '🤓'}
-                  {activeFilter === 'heart' && '😍'}
-                  {activeFilter === 'sparkles' && '✨'}
-                  {activeFilter === 'rainbow' && '🌈'}
                 </span>
               </div>
             )}
