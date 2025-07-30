@@ -23,10 +23,6 @@ import StoryViewerPage from "./pages/StoryViewerPage";
 import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import LikedPosts from "./pages/LikedPosts";
-import LikedPostsReels from "./pages/LikedPostsReels";
-import Archive from "./pages/Archive";
-import BlockedAccounts from "./pages/BlockedAccounts";
-import MyStories from "./pages/MyStories";
 import LanguageSettings from "./pages/LanguageSettings";
 
 const queryClient = new QueryClient();
@@ -69,10 +65,6 @@ const AppContent = () => {
       <Route path="/settings" element={<Settings />} />
       <Route path="/settings/language" element={<LanguageSettings />} />
       <Route path="/liked-posts" element={<LikedPosts />} />
-      <Route path="/liked" element={<LikedPostsReels />} />
-      <Route path="/archive" element={<Archive />} />
-      <Route path="/blocked" element={<BlockedAccounts />} />
-      <Route path="/mystories" element={<MyStories />} />
       <Route path="/add-story" element={<AddStory />} />
       <Route path="/story/:userIndex/:storyIndex" element={<StoryViewerPage />} />
       <Route path="/user/:userId" element={<UserProfile />} />
